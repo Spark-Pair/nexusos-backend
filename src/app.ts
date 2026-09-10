@@ -350,14 +350,15 @@ export function createApp(
     const data = z
       .object({ counterpart_id: z.string().uuid(), message: z.string().trim().min(1).max(4000) })
       .parse(request.body)
-    response.status(201).json({
-      data: await messaging.invite(
-        current.id,
-        current.account_kind,
-        data.counterpart_id,
-        data.message
-      )
-    })
+    const conversation = await messaging.invite(
+      current.id,
+      current.account_kind,
+      data.counterpart_id,
+      data.message
+    )
+    publishRealtime(conversation.customerId, { conversationId: conversation.id })
+    publishRealtime(conversation.businessId, { conversationId: conversation.id })
+    response.status(201).json({ data: conversation })
   })
   app.get('/api/conversations/:conversationId', async (request, response) => {
     const current = await actor(request.header('authorization'))
@@ -386,27 +387,28 @@ export function createApp(
     const decision = z
       .object({ decision: z.enum(['accepted', 'rejected']) })
       .parse(request.body).decision
-    response.json({
-      data: await messaging.respond(
-        current.id,
-        z.string().uuid().parse(request.params.conversationId),
-        decision
-      )
-    })
+    const conversation = await messaging.respond(
+      current.id,
+      z.string().uuid().parse(request.params.conversationId),
+      decision
+    )
+    publishRealtime(conversation.customerId, { conversationId: conversation.id })
+    publishRealtime(conversation.businessId, { conversationId: conversation.id })
+    response.json({ data: conversation })
   })
   app.post('/api/conversations/:conversationId/messages', limiter, async (request, response) => {
     const current = await actor(request.header('authorization'))
     const { body, client_id } = z
       .object({ body: z.string().trim().min(1).max(4000), client_id: z.string().uuid().optional() })
       .parse(request.body)
-    response.status(201).json({
-      data: await messaging.send(
-        current.id,
-        z.string().uuid().parse(request.params.conversationId),
-        body,
-        client_id
-      )
-    })
+    const conversationId = z.string().uuid().parse(request.params.conversationId)
+    const message = await messaging.send(current.id, conversationId, body, client_id)
+    const conversation = await repository.findConversation(conversationId)
+    if (conversation) {
+      publishRealtime(conversation.customerId, { conversationId: conversation.id })
+      publishRealtime(conversation.businessId, { conversationId: conversation.id })
+    }
+    response.status(201).json({ data: message })
   })
   app.get('/api/broadcast-lists', async (request, response) => {
     const current = await actor(request.header('authorization'))
@@ -619,6 +621,11 @@ export function createApp(
       try {
         publishRealtime(conversation.customerId, { conversationId: conversation.id })
         publishRealtime(conversation.businessId, { conversationId: conversation.id })
+        await push.send(conversation.customerId, {
+          title: 'Broadcast: ' + data.title,
+          body: data.body,
+          url: `/app/chats/${conversation.id}`
+        })
       } catch {
         // Clients also reconcile from the inbox on reconnect and periodic refresh.
       }
