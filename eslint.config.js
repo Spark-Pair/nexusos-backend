@@ -13,7 +13,7 @@ export default tseslint.config(
     }
   },
   {
-    files: ['**/*.{js,mjs}'],
+    files: ['**/*.{cjs,js,mjs}'],
     ...tseslint.configs.disableTypeChecked,
     languageOptions: { globals: globals.node, parserOptions: { project: null } }
   }
