@@ -95,7 +95,35 @@ sudo -u nexusos npm run db:migrate
 sudo -u nexusos npm prune --omit=dev
 ```
 
-Install systemd service:
+## Running with PM2
+
+This VPS already uses PM2 for other apps, so PM2 is the simplest process manager.
+
+```bash
+cd /var/www/nexusos-backend
+sudo -u nexusos pm2 start ecosystem.config.cjs
+sudo -u nexusos pm2 save
+sudo -u nexusos pm2 status
+```
+
+If PM2 was installed under `root` for the existing apps and you want to keep one PM2 list, use:
+
+```bash
+cd /var/www/nexusos-backend
+pm2 start ecosystem.config.cjs
+pm2 save
+pm2 status
+```
+
+The process name will be:
+
+```text
+nexusos-api
+```
+
+## Alternative: running with systemd
+
+Use systemd only if you do not want NexusOS in PM2.
 
 ```bash
 sudo cp deploy/nexusos-api.service /etc/systemd/system/nexusos-api.service
@@ -141,6 +169,6 @@ sudo -u nexusos npm ci
 sudo -u nexusos npm run build
 sudo -u nexusos npm run db:migrate
 sudo -u nexusos npm prune --omit=dev
-sudo systemctl restart nexusos-api
-sudo systemctl status nexusos-api
+pm2 restart nexusos-api
+pm2 status
 ```
