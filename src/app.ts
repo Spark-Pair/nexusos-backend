@@ -42,7 +42,7 @@ function createGoogleDependencies(config: AppConfig): GoogleExchangeDependencies
 const credentials = z.object({
   email: z.string().email(),
   password: z.string().min(8),
-  device_name: z.string().min(1).max(100)
+  device_name: z.string().min(1).max(100).optional()
 })
 const accountKind = z.enum(['customer', 'business'])
 export function createApp(
