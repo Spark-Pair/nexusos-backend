@@ -28,7 +28,21 @@ interface GoogleExchangeDependencies {
   verifyIdToken: (
     idToken: string
   ) => Promise<{ sub: string; email: string; emailVerified: boolean; name: string }>
-  warn: (message: string, metadata: { status?: number; reason: string }) => void
+  warn: (message: string, metadata: Record<string, unknown>) => void
+}
+
+function decodeGoogleTokenAudience(idToken: string) {
+  const payload = idToken.split('.')[1]
+  if (!payload) return undefined
+  try {
+    const normalized = payload.replace(/-/gu, '+').replace(/_/gu, '/')
+    const decoded = JSON.parse(Buffer.from(normalized, 'base64').toString('utf8')) as {
+      aud?: unknown
+    }
+    return typeof decoded.aud === 'string' ? decoded.aud : undefined
+  } catch {
+    return undefined
+  }
 }
 
 function createGoogleDependencies(config: AppConfig): GoogleExchangeDependencies {
@@ -291,8 +305,13 @@ export function createApp(
     let profile: { sub: string; email: string; emailVerified: boolean; name: string }
     try {
       profile = await googleDependencies.verifyIdToken(data.id_token)
-    } catch {
-      googleDependencies.warn('Google ID token verification failed.', { reason: 'invalid_token' })
+    } catch (error) {
+      const tokenAudience = decodeGoogleTokenAudience(data.id_token)
+      googleDependencies.warn('Google ID token verification failed.', {
+        reason: error instanceof Error ? error.message : 'invalid_token',
+        token_audience: tokenAudience,
+        configured_client: config.GOOGLE_CLIENT_ID
+      })
       throw new AuthError('Invalid Google token.', 401)
     }
     if (!profile.emailVerified) throw new AuthError('Google email is not verified.', 401)
