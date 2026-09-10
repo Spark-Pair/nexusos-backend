@@ -118,7 +118,12 @@ export function createApp(
   )
   app.get('/api/media/:key', async (request, response) => {
     const key = z.string().regex(mediaKeySchema).parse(request.params.key)
-    response.redirect(302, await mediaStorage.readUrl(key))
+    const image = await mediaStorage.readImage(key)
+    response.setHeader('Content-Type', image.contentType)
+    response.setHeader('Cache-Control', 'private, max-age=31536000, immutable')
+    response.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
+    if (image.contentLength) response.setHeader('Content-Length', String(image.contentLength))
+    image.body.pipe(response)
   })
   const limiter = rateLimit({
     windowMs: 60_000,

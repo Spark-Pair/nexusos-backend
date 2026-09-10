@@ -1,12 +1,18 @@
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { createReadStream } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import type { AppConfig } from '../config.js'
 
+export interface MediaReadResult {
+  body: NodeJS.ReadableStream
+  contentType: string
+  contentLength?: number
+}
+
 export interface MediaStorage {
   saveImage(file: { buffer: Buffer; mimetype: string; originalname: string }): Promise<string>
-  readUrl(key: string): Promise<string>
+  readImage(key: string): Promise<MediaReadResult>
 }
 
 const extensionFor = (mimeType: string) =>
@@ -24,8 +30,15 @@ class LocalMediaStorage implements MediaStorage {
     return key
   }
 
-  readUrl(key: string) {
-    return Promise.resolve(`/uploads/${key}`)
+  readImage(key: string) {
+    return Promise.resolve({
+      body: createReadStream(resolve(this.directory, key)),
+      contentType: key.endsWith('.png')
+        ? 'image/png'
+        : key.endsWith('.webp')
+          ? 'image/webp'
+          : 'image/jpeg'
+    })
   }
 }
 
@@ -59,15 +72,22 @@ class R2MediaStorage implements MediaStorage {
     return key
   }
 
-  async readUrl(key: string) {
-    return getSignedUrl(
-      this.client,
+  async readImage(key: string) {
+    const object = await this.client.send(
       new GetObjectCommand({
         Bucket: this.bucket,
         Key: key
-      }),
-      { expiresIn: 60 * 5 }
+      })
     )
+    if (!object.Body || !('pipe' in object.Body))
+      throw new Error('Media object body is unavailable.')
+    return {
+      body: object.Body as NodeJS.ReadableStream,
+      contentType:
+        object.ContentType ??
+        (key.endsWith('.png') ? 'image/png' : key.endsWith('.webp') ? 'image/webp' : 'image/jpeg'),
+      contentLength: object.ContentLength
+    }
   }
 }
 
