@@ -64,7 +64,7 @@ Create `/var/www/nexusos-backend/.env`:
 
 ```env
 NODE_ENV=production
-PORT=4000
+PORT=4010
 FRONTEND_URL=https://nexusos.sparkpair.dev
 FRONTEND_ORIGINS=https://nexusos.sparkpair.dev
 DATABASE_URL=postgresql://nexusos:replace-with-a-strong-password@127.0.0.1:5432/nexusos

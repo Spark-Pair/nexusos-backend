@@ -5,7 +5,8 @@ module.exports = {
       script: 'dist/server.js',
       cwd: '/var/www/nexusos-backend',
       env: {
-        NODE_ENV: 'production'
+        NODE_ENV: 'production',
+        PORT: 4010
       },
       instances: 1,
       exec_mode: 'fork',
