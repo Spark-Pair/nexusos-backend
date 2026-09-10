@@ -75,7 +75,10 @@ export function createApp(
   config: AppConfig,
   repository: AuthRepository & MessagingRepository & BroadcastRepository,
   googleDependencies: GoogleExchangeDependencies = createGoogleDependencies(config),
-  publishRealtime: (userId: string, payload: { conversationId: string }) => void = () => undefined,
+  publishRealtime: (
+    userId: string,
+    payload: { conversationId: string; title?: string; body?: string; url?: string }
+  ) => void = () => undefined,
   mediaStorage: MediaStorage = createMediaStorage(config)
 ) {
   const app = express()
@@ -95,7 +98,12 @@ export function createApp(
   const auth = new AuthService(repository, config, otpDelivery)
   const push = new PushNotificationService(repository, config)
   const messaging = new MessagingService(repository, async (userId, payload) => {
-    publishRealtime(userId, { conversationId: payload.url.split('/').at(-1) ?? '' })
+    publishRealtime(userId, {
+      conversationId: payload.url.split('/').at(-1) ?? '',
+      title: payload.title,
+      body: payload.body,
+      url: payload.url
+    })
     await push.send(userId, payload)
   })
   app.use(helmet())
@@ -619,13 +627,17 @@ export function createApp(
     const delivered = await repository.listBroadcastConversations(broadcast.id).catch(() => [])
     for (const conversation of delivered) {
       try {
-        publishRealtime(conversation.customerId, { conversationId: conversation.id })
-        publishRealtime(conversation.businessId, { conversationId: conversation.id })
-        await push.send(conversation.customerId, {
+        const notification = {
           title: 'Broadcast: ' + data.title,
           body: data.body,
           url: `/app/chats/${conversation.id}`
+        }
+        publishRealtime(conversation.customerId, {
+          conversationId: conversation.id,
+          ...notification
         })
+        publishRealtime(conversation.businessId, { conversationId: conversation.id })
+        await push.send(conversation.customerId, notification)
       } catch {
         // Clients also reconcile from the inbox on reconnect and periodic refresh.
       }

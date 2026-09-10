@@ -8,7 +8,10 @@ import { createRealtimeGateway } from './infrastructure/RealtimeGateway.js'
 const config = loadConfig()
 const pool = new pg.Pool({ connectionString: config.DATABASE_URL })
 const repository = new PostgresAuthRepository(pool)
-let publishRealtime: (userId: string, payload: { conversationId: string }) => void = () => undefined
+let publishRealtime: (
+  userId: string,
+  payload: { conversationId: string; title?: string; body?: string; url?: string }
+) => void = () => undefined
 const app = createApp(config, repository, undefined, (userId, payload) =>
   publishRealtime(userId, payload)
 )

@@ -59,7 +59,10 @@ export function createRealtimeGateway(
     })
   })
   return {
-    publish(userId: string, payload: { conversationId: string }) {
+    publish(
+      userId: string,
+      payload: { conversationId: string; title?: string; body?: string; url?: string }
+    ) {
       io.to(`user:${userId}`).emit('conversation:updated', payload)
     },
     close() {
