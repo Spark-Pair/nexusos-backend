@@ -53,7 +53,7 @@ export function createApp(
   mediaStorage: MediaStorage = createMediaStorage(config)
 ) {
   const app = express()
-  if (config.NODE_ENV === 'production') app.set('trust proxy', 1)
+  app.set('trust proxy', 1)
   const uploadDirectory = resolve(process.cwd(), 'uploads')
   mkdirSync(uploadDirectory, { recursive: true })
   const upload = multer({
