@@ -25,16 +25,28 @@ import {
 } from './infrastructure/mediaStorage.js'
 
 interface GoogleExchangeDependencies {
-  getTokenInfo: (accessToken: string) => Promise<{ aud?: string }>
-  fetchUserInfo: typeof fetch
+  verifyIdToken: (
+    idToken: string
+  ) => Promise<{ sub: string; email: string; emailVerified: boolean; name: string }>
   warn: (message: string, metadata: { status?: number; reason: string }) => void
 }
 
 function createGoogleDependencies(config: AppConfig): GoogleExchangeDependencies {
   const client = new OAuth2Client(config.GOOGLE_CLIENT_ID)
   return {
-    getTokenInfo: (accessToken) => client.getTokenInfo(accessToken),
-    fetchUserInfo: fetch,
+    verifyIdToken: async (idToken) => {
+      const audience = config.GOOGLE_CLIENT_ID
+      if (!audience) throw new AuthError('Google sign-in is not configured.', 503)
+      const ticket = await client.verifyIdToken({ idToken, audience })
+      const payload = ticket.getPayload()
+      if (!payload?.sub || !payload.email) throw new AuthError('Invalid Google token.', 401)
+      return {
+        sub: payload.sub,
+        email: payload.email,
+        emailVerified: payload.email_verified === true,
+        name: payload.name ?? 'NexusOS user'
+      }
+    },
     warn: (message, metadata) => console.warn(message, metadata)
   }
 }
@@ -268,7 +280,7 @@ export function createApp(
   app.post('/api/auth/google/exchange', limiter, async (request, response) => {
     const data = z
       .object({
-        access_token: z.string().min(1),
+        id_token: z.string().min(1),
         account_kind: accountKind,
         device_name: z.string()
       })
@@ -276,35 +288,14 @@ export function createApp(
     if (data.account_kind !== 'customer')
       throw new AuthError('Business accounts are created by an administrator.', 403)
     if (!config.GOOGLE_CLIENT_ID) throw new AuthError('Google sign-in is not configured.', 503)
-    let info: { aud?: string }
+    let profile: { sub: string; email: string; emailVerified: boolean; name: string }
     try {
-      info = await googleDependencies.getTokenInfo(data.access_token)
+      profile = await googleDependencies.verifyIdToken(data.id_token)
     } catch {
-      googleDependencies.warn('Google token inspection failed.', { reason: 'invalid_token' })
+      googleDependencies.warn('Google ID token verification failed.', { reason: 'invalid_token' })
       throw new AuthError('Invalid Google token.', 401)
     }
-    if (info.aud !== config.GOOGLE_CLIENT_ID) throw new AuthError('Invalid Google token.', 401)
-    const googleResponse = await googleDependencies.fetchUserInfo(
-      'https://openidconnect.googleapis.com/v1/userinfo',
-      {
-        headers: { Authorization: `Bearer ${data.access_token}` }
-      }
-    )
-    if (!googleResponse.ok) {
-      googleDependencies.warn('Google UserInfo request failed.', {
-        status: googleResponse.status,
-        reason: 'userinfo_rejected'
-      })
-      throw new AuthError('Unable to read Google identity.', 401)
-    }
-    const profile = z
-      .object({
-        sub: z.string(),
-        email: z.string().email(),
-        email_verified: z.literal(true),
-        name: z.string().default('NexusOS user')
-      })
-      .parse(await googleResponse.json())
+    if (!profile.emailVerified) throw new AuthError('Google email is not verified.', 401)
     response.json(
       await auth.google({
         googleId: profile.sub,

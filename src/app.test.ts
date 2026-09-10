@@ -24,35 +24,22 @@ const googleConfig: AppConfig = {
   GOOGLE_CLIENT_ID: 'web-client-id.apps.googleusercontent.com'
 }
 
-function googleDependencies(overrides?: {
-  audience?: string
-  tokenError?: Error
-  userInfoResponse?: Response
-}) {
-  const accessToken = 'test-google-access-token'
-  const getTokenInfo = vi.fn(() => {
+function googleDependencies(overrides?: { tokenError?: Error; emailVerified?: boolean }) {
+  const idToken = 'test-google-id-token'
+  const verifyIdToken = vi.fn(() => {
     if (overrides?.tokenError) return Promise.reject(overrides.tokenError)
-    return Promise.resolve({ aud: overrides?.audience ?? googleConfig.GOOGLE_CLIENT_ID })
+    return Promise.resolve({
+      sub: 'google-user-1',
+      email: 'google@example.test',
+      emailVerified: overrides?.emailVerified ?? true,
+      name: 'Google User'
+    })
   })
-  const fetchUserInfo = vi.fn(() =>
-    Promise.resolve(
-      overrides?.userInfoResponse ??
-        new Response(
-          JSON.stringify({
-            sub: 'google-user-1',
-            email: 'google@example.test',
-            email_verified: true,
-            name: 'Google User'
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
-        )
-    )
-  )
-  return { accessToken, dependencies: { getTokenInfo, fetchUserInfo, warn: vi.fn() } }
+  return { idToken, dependencies: { verifyIdToken, warn: vi.fn() } }
 }
 
-const googlePayload = (accessToken: string) => ({
-  access_token: accessToken,
+const googlePayload = (idToken: string) => ({
+  id_token: idToken,
   account_kind: 'customer',
   device_name: 'web test'
 })
@@ -154,62 +141,42 @@ describe('NexusOS Express authentication API', () => {
   it('does not offer Google exchange without configured credentials', async () => {
     await request(setup())
       .post('/api/auth/google/exchange')
-      .send({ access_token: 'not-real', account_kind: 'customer', device_name: 'web' })
+      .send({ id_token: 'not-real', account_kind: 'customer', device_name: 'web' })
       .expect(503)
   })
 
-  it('uses the versioned UserInfo endpoint with the Bearer access token', async () => {
+  it('verifies a Google ID token before account creation', async () => {
     const google = googleDependencies()
     await request(createApp(googleConfig, new MemoryAuthRepository(), google.dependencies))
       .post('/api/auth/google/exchange')
-      .send(googlePayload(google.accessToken))
+      .send(googlePayload(google.idToken))
       .expect(200)
 
-    expect(google.dependencies.fetchUserInfo).toHaveBeenCalledWith(
-      'https://openidconnect.googleapis.com/v1/userinfo',
-      { headers: { Authorization: `Bearer ${google.accessToken}` } }
-    )
+    expect(google.dependencies.verifyIdToken).toHaveBeenCalledWith(google.idToken)
   })
 
-  it('rejects a token that Google cannot inspect', async () => {
+  it('rejects a Google ID token that cannot be verified', async () => {
     const google = googleDependencies({ tokenError: new Error('invalid token') })
     const response = await request(
       createApp(googleConfig, new MemoryAuthRepository(), google.dependencies)
     )
       .post('/api/auth/google/exchange')
-      .send(googlePayload(google.accessToken))
+      .send(googlePayload(google.idToken))
       .expect(401)
 
     expect(response.body.message).toBe('Invalid Google token.')
-    expect(google.dependencies.fetchUserInfo).not.toHaveBeenCalled()
   })
 
-  it('rejects an access token issued to a different OAuth audience', async () => {
-    const google = googleDependencies({ audience: 'another-client.apps.googleusercontent.com' })
-    await request(createApp(googleConfig, new MemoryAuthRepository(), google.dependencies))
-      .post('/api/auth/google/exchange')
-      .send(googlePayload(google.accessToken))
-      .expect(401)
-
-    expect(google.dependencies.fetchUserInfo).not.toHaveBeenCalled()
-  })
-
-  it('rejects a non-success response from Google UserInfo without exposing its body', async () => {
-    const google = googleDependencies({
-      userInfoResponse: new Response('provider detail', { status: 401 })
-    })
+  it('rejects a Google identity with an unverified email', async () => {
+    const google = googleDependencies({ emailVerified: false })
     const response = await request(
       createApp(googleConfig, new MemoryAuthRepository(), google.dependencies)
     )
       .post('/api/auth/google/exchange')
-      .send(googlePayload(google.accessToken))
+      .send(googlePayload(google.idToken))
       .expect(401)
 
-    expect(response.body).toEqual({ message: 'Unable to read Google identity.' })
-    expect(google.dependencies.warn).toHaveBeenCalledWith('Google UserInfo request failed.', {
-      status: 401,
-      reason: 'userinfo_rejected'
-    })
+    expect(response.body.message).toBe('Google email is not verified.')
   })
 
   it('continues through NexusOS account creation for a verified Google identity', async () => {
@@ -218,7 +185,7 @@ describe('NexusOS Express authentication API', () => {
       createApp(googleConfig, new MemoryAuthRepository(), google.dependencies)
     )
       .post('/api/auth/google/exchange')
-      .send(googlePayload(google.accessToken))
+      .send(googlePayload(google.idToken))
       .expect(200)
 
     expect(response.body.data).toMatchObject({
@@ -327,7 +294,7 @@ describe('NexusOS Express authentication API', () => {
     const app = createApp(googleConfig, repository, google.dependencies)
     const signedIn = await request(app)
       .post('/api/auth/google/exchange')
-      .send(googlePayload(google.accessToken))
+      .send(googlePayload(google.idToken))
       .expect(200)
     const challenged = await request(app)
       .post('/api/auth/phone/challenge')
@@ -353,11 +320,11 @@ describe('NexusOS Express authentication API', () => {
     const app = createApp(googleConfig, repository, google.dependencies)
     const first = await request(app)
       .post('/api/auth/google/exchange')
-      .send(googlePayload(google.accessToken))
+      .send(googlePayload(google.idToken))
       .expect(200)
     const second = await request(app)
       .post('/api/auth/google/exchange')
-      .send(googlePayload(google.accessToken))
+      .send(googlePayload(google.idToken))
       .expect(200)
     expect(second.body.data.id).toBe(first.body.data.id)
   })
