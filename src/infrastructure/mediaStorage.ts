@@ -7,7 +7,7 @@ import type { AppConfig } from '../config.js'
 export interface MediaReadResult {
   body: NodeJS.ReadableStream
   contentType: string
-  contentLength?: number
+  contentLength?: number | undefined
 }
 
 export interface MediaStorage {
