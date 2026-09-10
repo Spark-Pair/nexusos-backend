@@ -1,0 +1,17 @@
+[Unit]
+Description=NexusOS API
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/var/www/nexusos-backend
+EnvironmentFile=/var/www/nexusos-backend/.env
+ExecStart=/usr/bin/node dist/server.js
+Restart=always
+RestartSec=5
+User=nexusos
+Group=www-data
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
