@@ -1,7 +1,6 @@
 import type {
   AuthRepository,
   BusinessRequest,
-  PhoneChallenge,
   ProfileSettings,
   PushSubscriptionRecord,
   User
@@ -19,7 +18,6 @@ export class MemoryAuthRepository
   implements AuthRepository, MessagingRepository, BroadcastRepository
 {
   private readonly users = new Map<string, User>()
-  private readonly challenges = new Map<string, PhoneChallenge>()
   private readonly follows = new Set<string>()
   private readonly conversations = new Map<string, Conversation>()
   private readonly messages = new Map<string, Message>()
@@ -44,9 +42,6 @@ export class MemoryAuthRepository
   async findUserByEmail(email: string) {
     return [...this.users.values()].find((user) => user.email === email) ?? null
   }
-  async findUserByPhone(phone: string) {
-    return [...this.users.values()].find((user) => user.phone === phone) ?? null
-  }
   async createUser(input: Omit<User, 'id'>) {
     const user = { ...input, id: crypto.randomUUID() }
     this.users.set(user.id, user)
@@ -55,23 +50,6 @@ export class MemoryAuthRepository
   async updateUser(user: User) {
     this.users.set(user.id, user)
     return user
-  }
-  async createChallenge(challenge: PhoneChallenge) {
-    this.challenges.set(challenge.id, challenge)
-  }
-  async findChallenge(id: string) {
-    return this.challenges.get(id) ?? null
-  }
-  async updateChallenge(challenge: PhoneChallenge) {
-    this.challenges.set(challenge.id, challenge)
-  }
-  async invalidateActiveChallenges(phone: string) {
-    for (const challenge of this.challenges.values()) {
-      if (challenge.phone === phone && !challenge.consumedAt) {
-        challenge.consumedAt = new Date()
-        this.challenges.set(challenge.id, challenge)
-      }
-    }
   }
   async recordLogin(id: string, method: NonNullable<User['lastLoginMethod']>) {
     const user = this.users.get(id)

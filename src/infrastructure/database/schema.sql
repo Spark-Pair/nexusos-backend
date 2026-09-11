@@ -47,16 +47,6 @@ CREATE TABLE IF NOT EXISTS business_requests (
 CREATE UNIQUE INDEX IF NOT EXISTS business_requests_one_pending_per_user ON business_requests(user_id) WHERE status='pending';
 CREATE INDEX IF NOT EXISTS business_requests_status_idx ON business_requests(status, created_at DESC);
 
-CREATE TABLE IF NOT EXISTS phone_challenges (
-  id uuid PRIMARY KEY,
-  phone varchar(20) NOT NULL,
-  code_hash varchar(255) NOT NULL,
-  attempts smallint NOT NULL DEFAULT 0,
-  expires_at timestamptz NOT NULL,
-  consumed_at timestamptz,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS phone_challenges_phone_idx ON phone_challenges(phone);
 CREATE TABLE IF NOT EXISTS follows (
   customer_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   business_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,

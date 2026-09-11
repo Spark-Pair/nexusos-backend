@@ -2,7 +2,6 @@ import type { Pool, QueryResultRow } from 'pg'
 import type {
   AuthRepository,
   BusinessRequest,
-  PhoneChallenge,
   ProfileSettings,
   PushSubscriptionRecord,
   User
@@ -117,10 +116,6 @@ export class PostgresAuthRepository
     const result = await this.pool.query<UserRow>('SELECT * FROM users WHERE email = $1', [email])
     return result.rows[0] ? toUser(result.rows[0]) : null
   }
-  async findUserByPhone(phone: string) {
-    const result = await this.pool.query<UserRow>('SELECT * FROM users WHERE phone = $1', [phone])
-    return result.rows[0] ? toUser(result.rows[0]) : null
-  }
   async createUser(user: Omit<User, 'id'>) {
     const id = crypto.randomUUID()
     const result = await this.pool.query<UserRow>(
@@ -170,39 +165,6 @@ export class PostgresAuthRepository
       ]
     )
     return toUser(result.rows[0]!)
-  }
-  async createChallenge(value: PhoneChallenge) {
-    await this.pool.query(
-      'INSERT INTO phone_challenges (id,phone,code_hash,attempts,expires_at,consumed_at) VALUES ($1,$2,$3,$4,$5,$6)',
-      [value.id, value.phone, value.codeHash, value.attempts, value.expiresAt, value.consumedAt]
-    )
-  }
-  async findChallenge(id: string) {
-    const result = await this.pool.query('SELECT * FROM phone_challenges WHERE id=$1', [id])
-    const row = result.rows[0] as Record<string, unknown> | undefined
-    return row
-      ? {
-          id: String(row.id),
-          phone: String(row.phone),
-          codeHash: String(row.code_hash),
-          attempts: Number(row.attempts),
-          expiresAt: new Date(String(row.expires_at)),
-          consumedAt: row.consumed_at instanceof Date ? row.consumed_at : null
-        }
-      : null
-  }
-  async updateChallenge(value: PhoneChallenge) {
-    await this.pool.query('UPDATE phone_challenges SET attempts=$2,consumed_at=$3 WHERE id=$1', [
-      value.id,
-      value.attempts,
-      value.consumedAt
-    ])
-  }
-  async invalidateActiveChallenges(phone: string) {
-    await this.pool.query(
-      'UPDATE phone_challenges SET consumed_at=now() WHERE phone=$1 AND consumed_at IS NULL',
-      [phone]
-    )
   }
   async recordLogin(id: string, method: NonNullable<User['lastLoginMethod']>) {
     const result = await this.pool.query<UserRow>(

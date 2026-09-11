@@ -13,8 +13,6 @@ const config: AppConfig = {
   DATABASE_URL: 'unused',
   JWT_SECRET: 'test-secret-that-is-at-least-32-characters',
   JWT_ISSUER: 'nexusos-test',
-  OTP_DELIVERY_MODE: 'development',
-  ALLOW_DEVELOPMENT_OTP_IN_PRODUCTION: false,
   ADMIN_EMAILS: 'admin@example.test'
 }
 const setup = () => createApp(config, new MemoryAuthRepository())
@@ -58,7 +56,7 @@ describe('NexusOS Express authentication API', () => {
         device_name: 'web test'
       })
       .expect(201)
-    expect(registered.body.requires_phone).toBe(true)
+    expect(registered.body.requires_phone).toBe(false)
     expect(registered.body.token).toEqual(expect.any(String))
     await request(app)
       .post('/api/auth/login')
@@ -110,41 +108,6 @@ describe('NexusOS Express authentication API', () => {
       .send({ email: 'north@example.test', password: 'Secure123', device_name: 'web test' })
       .expect(200)
   })
-  it('creates an expiring OTP challenge and verifies the development code', async () => {
-    const app = setup()
-    const challenged = await request(app)
-      .post('/api/auth/phone/challenge')
-      .send({ phone: '+923001234567' })
-      .expect(201)
-    expect(challenged.body.development_code).toMatch(/^\d{6}$/u)
-    const verified = await request(app)
-      .post('/api/auth/phone/verify')
-      .send({
-        challenge_id: challenged.body.challenge_id,
-        code: challenged.body.development_code,
-        account_kind: 'customer',
-        device_name: 'iPhone'
-      })
-      .expect(200)
-    expect(verified.body.requires_phone).toBe(false)
-    expect(verified.body.data.account_kind).toBe('customer')
-    await request(app)
-      .post('/api/auth/phone/verify')
-      .send({
-        challenge_id: challenged.body.challenge_id,
-        code: challenged.body.development_code,
-        account_kind: 'business',
-        device_name: 'iPhone'
-      })
-      .expect(403)
-  })
-  it('does not offer Google exchange without configured credentials', async () => {
-    await request(setup())
-      .post('/api/auth/google/exchange')
-      .send({ id_token: 'not-real', account_kind: 'customer', device_name: 'web' })
-      .expect(503)
-  })
-
   it('verifies a Google ID token before account creation', async () => {
     const google = googleDependencies()
     await request(createApp(googleConfig, new MemoryAuthRepository(), google.dependencies))
@@ -194,7 +157,7 @@ describe('NexusOS Express authentication API', () => {
       account_kind: 'customer'
     })
     expect(response.body.token).toEqual(expect.any(String))
-    expect(response.body.requires_phone).toBe(true)
+    expect(response.body.requires_phone).toBe(false)
   })
 
   it('restores authenticated identity and rejects invalid sessions', async () => {
@@ -222,98 +185,6 @@ describe('NexusOS Express authentication API', () => {
       .expect(204)
   })
 
-  it('rejects incorrect, expired, and reused OTP challenges', async () => {
-    const repository = new MemoryAuthRepository()
-    const app = createApp(config, repository)
-    const wrong = await request(app)
-      .post('/api/auth/phone/challenge')
-      .send({ phone: '+923161111111' })
-      .expect(201)
-    await request(app)
-      .post('/api/auth/phone/verify')
-      .send({
-        challenge_id: wrong.body.challenge_id,
-        code: '999999',
-        account_kind: 'customer',
-        device_name: 'web'
-      })
-      .expect(422)
-    const expired = await request(app)
-      .post('/api/auth/phone/challenge')
-      .send({ phone: '+923162222222' })
-      .expect(201)
-    const expiredChallengeId = String(expired.body.challenge_id as unknown)
-    const record = await repository.findChallenge(expiredChallengeId)
-    expect(record).not.toBeNull()
-    if (record) {
-      record.expiresAt = new Date(Date.now() - 1)
-      await repository.updateChallenge(record)
-    }
-    await request(app)
-      .post('/api/auth/phone/verify')
-      .send({
-        challenge_id: expired.body.challenge_id,
-        code: expired.body.development_code,
-        account_kind: 'customer',
-        device_name: 'web'
-      })
-      .expect(422)
-    const reusable = await request(app)
-      .post('/api/auth/phone/challenge')
-      .send({ phone: '+923163333333' })
-      .expect(201)
-    const payload = {
-      challenge_id: reusable.body.challenge_id,
-      code: reusable.body.development_code,
-      account_kind: 'customer',
-      device_name: 'web'
-    }
-    await request(app).post('/api/auth/phone/verify').send(payload).expect(200)
-    await request(app).post('/api/auth/phone/verify').send(payload).expect(422)
-  })
-
-  it('invalidates the previous OTP when a newer code is requested', async () => {
-    const app = setup()
-    const phone = '+923164444444'
-    const first = await request(app).post('/api/auth/phone/challenge').send({ phone }).expect(201)
-    await request(app).post('/api/auth/phone/challenge').send({ phone }).expect(201)
-    await request(app)
-      .post('/api/auth/phone/verify')
-      .send({
-        challenge_id: first.body.challenge_id,
-        code: first.body.development_code,
-        account_kind: 'customer',
-        device_name: 'web'
-      })
-      .expect(422)
-  })
-
-  it('attaches a verified phone to the same Google user', async () => {
-    const repository = new MemoryAuthRepository()
-    const google = googleDependencies()
-    const app = createApp(googleConfig, repository, google.dependencies)
-    const signedIn = await request(app)
-      .post('/api/auth/google/exchange')
-      .send(googlePayload(google.idToken))
-      .expect(200)
-    const challenged = await request(app)
-      .post('/api/auth/phone/challenge')
-      .send({ phone: '+923165555555' })
-      .expect(201)
-    const completed = await request(app)
-      .post('/api/auth/phone/complete')
-      .set('Authorization', `Bearer ${signedIn.body.token}`)
-      .send({
-        challenge_id: challenged.body.challenge_id,
-        code: challenged.body.development_code,
-        account_kind: 'customer',
-        device_name: 'web'
-      })
-      .expect(200)
-    expect(completed.body.data.id).toBe(signedIn.body.data.id)
-    expect(completed.body.requires_phone).toBe(false)
-  })
-
   it('reuses the existing NexusOS user on subsequent Google sign-in', async () => {
     const repository = new MemoryAuthRepository()
     const google = googleDependencies()
@@ -327,31 +198,6 @@ describe('NexusOS Express authentication API', () => {
       .send(googlePayload(google.idToken))
       .expect(200)
     expect(second.body.data.id).toBe(first.body.data.id)
-  })
-
-  it('rate limits repeated OTP requests', async () => {
-    const app = setup()
-    for (let index = 0; index < 3; index += 1)
-      await request(app)
-        .post('/api/auth/phone/challenge')
-        .send({ phone: `+92317${String(index).padStart(7, '0')}` })
-        .expect(201)
-    await request(app)
-      .post('/api/auth/phone/challenge')
-      .send({ phone: '+923179999999' })
-      .expect(429)
-  })
-
-  it('never starts production with development OTP delivery enabled', () => {
-    expect(() =>
-      loadConfig({
-        NODE_ENV: 'production',
-        DATABASE_URL: 'postgres://example',
-        JWT_SECRET: 'production-secret-that-is-at-least-32',
-        OTP_DELIVERY_MODE: 'development',
-        ADMIN_EMAILS: ''
-      })
-    ).toThrow()
   })
 
   it('enforces follow, invitation acceptance, and participant-only messaging', async () => {

@@ -46,24 +46,11 @@ export interface AdminUserRecord {
   createdAt: Date
   deletedAt: Date | null
 }
-export interface PhoneChallenge {
-  id: string
-  phone: string
-  codeHash: string
-  attempts: number
-  expiresAt: Date
-  consumedAt: Date | null
-}
 export interface AuthRepository {
   findUserById(id: string): Promise<User | null>
   findUserByEmail(email: string): Promise<User | null>
-  findUserByPhone(phone: string): Promise<User | null>
   createUser(input: Omit<User, 'id'>): Promise<User>
   updateUser(user: User): Promise<User>
-  createChallenge(challenge: PhoneChallenge): Promise<void>
-  findChallenge(id: string): Promise<PhoneChallenge | null>
-  updateChallenge(challenge: PhoneChallenge): Promise<void>
-  invalidateActiveChallenges(phone: string): Promise<void>
   recordLogin(id: string, method: NonNullable<User['lastLoginMethod']>): Promise<User>
   listUsersForAdmin(query: string): Promise<AdminUserRecord[]>
   setUserActive(id: string, active: boolean): Promise<AdminUserRecord | null>

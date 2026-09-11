@@ -11,8 +11,6 @@ const schema = z
     JWT_SECRET: z.string().min(32),
     JWT_ISSUER: z.string().default('nexusos-api'),
     GOOGLE_CLIENT_ID: z.string().optional(),
-    OTP_DELIVERY_MODE: z.enum(['development', 'sms']).default('development'),
-    ALLOW_DEVELOPMENT_OTP_IN_PRODUCTION: z.coerce.boolean().default(false),
     ADMIN_EMAILS: z.string().default(''),
     VAPID_PUBLIC_KEY: z.string().optional(),
     VAPID_PRIVATE_KEY: z.string().optional(),
@@ -24,17 +22,6 @@ const schema = z
     R2_SECRET_ACCESS_KEY: z.string().optional()
   })
   .superRefine((value, context) => {
-    if (
-      value.NODE_ENV === 'production' &&
-      value.OTP_DELIVERY_MODE === 'development' &&
-      !value.ALLOW_DEVELOPMENT_OTP_IN_PRODUCTION
-    ) {
-      context.addIssue({
-        code: 'custom',
-        path: ['OTP_DELIVERY_MODE'],
-        message: 'Production requires an SMS OTP provider.'
-      })
-    }
     if (Boolean(value.VAPID_PUBLIC_KEY) !== Boolean(value.VAPID_PRIVATE_KEY)) {
       context.addIssue({
         code: 'custom',

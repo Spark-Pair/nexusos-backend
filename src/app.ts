@@ -10,10 +10,6 @@ import { z } from 'zod'
 import { AuthError, AuthService } from './application/AuthService.js'
 import { MessagingService } from './application/MessagingService.js'
 import { PushNotificationService } from './application/PushNotificationService.js'
-import {
-  DevelopmentOtpDeliveryProvider,
-  UnconfiguredSmsDeliveryProvider
-} from './application/OtpDeliveryProvider.js'
 import type { AppConfig } from './config.js'
 import type { AuthRepository } from './domain/auth.js'
 import type { MessagingRepository } from './domain/messaging.js'
@@ -91,11 +87,7 @@ export function createApp(
     fileFilter: (_request, file, done) =>
       done(null, ['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype))
   })
-  const otpDelivery =
-    config.OTP_DELIVERY_MODE === 'development'
-      ? new DevelopmentOtpDeliveryProvider()
-      : new UnconfiguredSmsDeliveryProvider()
-  const auth = new AuthService(repository, config, otpDelivery)
+  const auth = new AuthService(repository, config)
   const push = new PushNotificationService(repository, config)
   const messaging = new MessagingService(repository, async (userId, payload) => {
     publishRealtime(userId, {
@@ -254,55 +246,6 @@ export function createApp(
   app.post('/api/auth/login', limiter, async (request, response) => {
     const data = credentials.parse(request.body)
     response.json(await auth.login(data.email, data.password))
-  })
-  app.post(
-    '/api/auth/phone/challenge',
-    rateLimit({ windowMs: 60_000, limit: 3 }),
-    async (request, response) => {
-      const data = z.object({ phone: z.string().regex(/^\+923\d{9}$/u) }).parse(request.body)
-      response.status(201).json(await auth.challenge(data.phone))
-    }
-  )
-  app.post('/api/auth/phone/verify', limiter, async (request, response) => {
-    const data = z
-      .object({
-        challenge_id: z.string().uuid(),
-        code: z.string().regex(/^\d{6}$/u),
-        account_kind: accountKind,
-        device_name: z.string()
-      })
-      .parse(request.body)
-    if (data.account_kind !== 'customer')
-      throw new AuthError('Business accounts are created by an administrator.', 403)
-    response.json(
-      await auth.verifyPhone({
-        challengeId: data.challenge_id,
-        code: data.code,
-        accountKind: data.account_kind
-      })
-    )
-  })
-  app.post('/api/auth/phone/complete', limiter, async (request, response) => {
-    const token = bearerToken(request.header('authorization'))
-    const restored = await auth.restore(token)
-    const data = z
-      .object({
-        challenge_id: z.string().uuid(),
-        code: z.string().regex(/^\d{6}$/u),
-        account_kind: accountKind,
-        device_name: z.string()
-      })
-      .parse(request.body)
-    response.json(
-      await auth.completePhone(
-        {
-          challengeId: data.challenge_id,
-          code: data.code,
-          accountKind: data.account_kind
-        },
-        restored.data.id
-      )
-    )
   })
   app.post('/api/auth/google/exchange', limiter, async (request, response) => {
     const data = z
