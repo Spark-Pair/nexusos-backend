@@ -200,6 +200,67 @@ describe('NexusOS Express authentication API', () => {
     expect(second.body.data.id).toBe(first.body.data.id)
   })
 
+  it('lets a customer request business access and lets an admin approve it', async () => {
+    const app = setup()
+    const customer = await request(app)
+      .post('/api/auth/register')
+      .send({
+        name: 'Request User',
+        email: 'request-user@example.test',
+        password: 'Secure123',
+        password_confirmation: 'Secure123',
+        account_kind: 'customer',
+        device_name: 'web test'
+      })
+      .expect(201)
+    const admin = await request(app)
+      .post('/api/auth/register')
+      .send({
+        name: 'Admin User',
+        email: 'admin@example.test',
+        password: 'Secure123',
+        password_confirmation: 'Secure123',
+        account_kind: 'customer',
+        device_name: 'web test'
+      })
+      .expect(201)
+
+    const created = await request(app)
+      .post('/api/business-requests')
+      .set('Authorization', `Bearer ${String(customer.body.token)}`)
+      .send({
+        business_name: 'Request Studio',
+        contact_person_name: 'Hasan Raza',
+        phone: '+92 300 1234567'
+      })
+      .expect(201)
+
+    expect(created.body.data).toMatchObject({
+      businessName: 'Request Studio',
+      contactPersonName: 'Hasan Raza',
+      status: 'pending'
+    })
+
+    const requests = await request(app)
+      .get('/api/admin/business-requests')
+      .set('Authorization', `Bearer ${String(admin.body.token)}`)
+      .expect(200)
+    expect(requests.body.data).toHaveLength(1)
+
+    const approved = await request(app)
+      .post(`/api/admin/business-requests/${String(created.body.data.id)}/resolve`)
+      .set('Authorization', `Bearer ${String(admin.body.token)}`)
+      .send({ decision: 'approved' })
+      .expect(200)
+    expect(approved.body.data.status).toBe('approved')
+
+    await request(app)
+      .get('/api/profile')
+      .set('Authorization', `Bearer ${String(customer.body.token)}`)
+      .expect(200)
+      .expect((response) => expect(response.body.data.account_kind).toBe('business'))
+  })
+
   it('enforces follow, invitation acceptance, and participant-only messaging', async () => {
     const app = setup()
     const register = (name: string, email: string, kind: 'customer' | 'business') =>
