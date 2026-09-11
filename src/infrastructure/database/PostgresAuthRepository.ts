@@ -1,6 +1,7 @@
 import type { Pool, QueryResultRow } from 'pg'
 import type {
   AuthRepository,
+  BusinessRequest,
   PhoneChallenge,
   ProfileSettings,
   PushSubscriptionRecord,
@@ -34,6 +35,21 @@ interface UserRow extends QueryResultRow {
   created_at: Date
   deleted_at: Date | null
 }
+
+interface BusinessRequestRow extends QueryResultRow {
+  id: string
+  user_id: string
+  user_name: string
+  user_email: string | null
+  business_name: string
+  contact_person_name: string
+  phone: string
+  status: BusinessRequest['status']
+  created_at: Date
+  reviewed_at: Date | null
+  reviewed_by: string | null
+}
+
 interface ConversationRow extends QueryResultRow {
   id: string
   customer_id: string
@@ -54,6 +70,21 @@ interface MessageRow extends QueryResultRow {
   title: string
   image_urls: string[]
 }
+
+const toBusinessRequest = (row: BusinessRequestRow): BusinessRequest => ({
+  id: row.id,
+  userId: row.user_id,
+  userName: row.user_name,
+  userEmail: row.user_email,
+  businessName: row.business_name,
+  contactPersonName: row.contact_person_name,
+  phone: row.phone,
+  status: row.status,
+  createdAt: row.created_at,
+  reviewedAt: row.reviewed_at,
+  reviewedBy: row.reviewed_by
+})
+
 const toUser = (row: UserRow): User => ({
   id: row.id,
   name: row.name,
@@ -246,6 +277,71 @@ export class PostgresAuthRepository
         }
       : null
   }
+
+  async createBusinessRequest(input: {
+    userId: string
+    businessName: string
+    contactPersonName: string
+    phone: string
+  }) {
+    const result = await this.pool.query<BusinessRequestRow>(
+      `INSERT INTO business_requests(id,user_id,business_name,contact_person_name,phone,status)
+       VALUES($1,$2,$3,$4,$5,'pending')
+       ON CONFLICT (user_id) WHERE status='pending'
+       DO UPDATE SET business_name=$3,contact_person_name=$4,phone=$5,updated_at=now()
+       RETURNING id,user_id,business_name,contact_person_name,phone,status,created_at,reviewed_at,reviewed_by,
+       (SELECT name FROM users WHERE users.id=business_requests.user_id) user_name,
+       (SELECT email FROM users WHERE users.id=business_requests.user_id) user_email`,
+      [crypto.randomUUID(), input.userId, input.businessName, input.contactPersonName, input.phone]
+    )
+    return toBusinessRequest(result.rows[0]!)
+  }
+
+  async listBusinessRequests() {
+    const result = await this.pool.query<BusinessRequestRow>(
+      `SELECT r.id,r.user_id,r.business_name,r.contact_person_name,r.phone,r.status,r.created_at,r.reviewed_at,r.reviewed_by,
+       u.name user_name,u.email user_email
+       FROM business_requests r JOIN users u ON u.id=r.user_id
+       ORDER BY CASE r.status WHEN 'pending' THEN 0 ELSE 1 END, r.created_at DESC
+       LIMIT 200`
+    )
+    return result.rows.map(toBusinessRequest)
+  }
+
+  async resolveBusinessRequest(id: string, adminId: string, decision: 'approved' | 'rejected') {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const updated = await client.query<BusinessRequestRow>(
+        `UPDATE business_requests SET status=$2,reviewed_by=$3,reviewed_at=now(),updated_at=now()
+         WHERE id=$1 AND status='pending'
+         RETURNING id,user_id,business_name,contact_person_name,phone,status,created_at,reviewed_at,reviewed_by,
+         (SELECT name FROM users WHERE users.id=business_requests.user_id) user_name,
+         (SELECT email FROM users WHERE users.id=business_requests.user_id) user_email`,
+        [id, decision, adminId]
+      )
+      const row = updated.rows[0]
+      if (!row) {
+        await client.query('ROLLBACK')
+        return null
+      }
+      if (decision === 'approved') {
+        await client.query(
+          `UPDATE users SET account_kind='business',name=$2,phone=$3,updated_at=now()
+           WHERE id=$1 AND deleted_at IS NULL`,
+          [row.user_id, row.business_name, row.phone]
+        )
+      }
+      await client.query('COMMIT')
+      return toBusinessRequest(row)
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
   async savePushSubscription(userId: string, subscription: PushSubscriptionRecord) {
     await this.pool.query(
       `INSERT INTO push_subscriptions(user_id,endpoint,expiration_time,p256dh,auth) VALUES($1,$2,$3,$4,$5) ON CONFLICT(user_id,endpoint) DO UPDATE SET expiration_time=$3,p256dh=$4,auth=$5,updated_at=now()`,

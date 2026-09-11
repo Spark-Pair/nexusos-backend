@@ -31,6 +31,22 @@ CREATE TABLE IF NOT EXISTS profile_settings (
   allow_broadcasts boolean NOT NULL DEFAULT true,
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS business_requests (
+  id uuid PRIMARY KEY,
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  business_name varchar(120) NOT NULL,
+  contact_person_name varchar(80) NOT NULL,
+  phone varchar(20) NOT NULL,
+  status varchar(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+  reviewed_by uuid REFERENCES users(id) ON DELETE SET NULL,
+  reviewed_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS business_requests_one_pending_per_user ON business_requests(user_id) WHERE status='pending';
+CREATE INDEX IF NOT EXISTS business_requests_status_idx ON business_requests(status, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS phone_challenges (
   id uuid PRIMARY KEY,
   phone varchar(20) NOT NULL,

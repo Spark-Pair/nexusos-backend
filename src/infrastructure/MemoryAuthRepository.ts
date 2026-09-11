@@ -1,5 +1,6 @@
 import type {
   AuthRepository,
+  BusinessRequest,
   PhoneChallenge,
   ProfileSettings,
   PushSubscriptionRecord,
@@ -25,6 +26,7 @@ export class MemoryAuthRepository
   private readonly conversationStates = new Map<string, { archived: boolean; muted: boolean }>()
   private readonly pushSubscriptions = new Map<string, PushSubscriptionRecord>()
   private readonly profileSettings = new Map<string, ProfileSettings>()
+  private readonly businessRequests = new Map<string, BusinessRequest>()
   private readonly broadcastLists = new Map<string, BroadcastList>()
   private readonly broadcasts = new Map<string, BusinessBroadcast>()
   private readonly broadcastDrafts = new Map<string, BroadcastDraft>()
@@ -129,6 +131,59 @@ export class MemoryAuthRepository
     const [record] = await this.listUsersForAdmin(updated.username)
     return record ?? null
   }
+
+  async createBusinessRequest(input: {
+    userId: string
+    businessName: string
+    contactPersonName: string
+    phone: string
+  }) {
+    const existing = [...this.businessRequests.values()].find(
+      (request) => request.userId === input.userId && request.status === 'pending'
+    )
+    const user = this.users.get(input.userId)
+    const request: BusinessRequest = {
+      id: existing?.id ?? crypto.randomUUID(),
+      userId: input.userId,
+      userName: user?.name ?? 'Unknown user',
+      userEmail: user?.email ?? null,
+      businessName: input.businessName,
+      contactPersonName: input.contactPersonName,
+      phone: input.phone,
+      status: 'pending',
+      createdAt: existing?.createdAt ?? new Date(),
+      reviewedAt: null,
+      reviewedBy: null
+    }
+    this.businessRequests.set(request.id, request)
+    return request
+  }
+
+  async listBusinessRequests() {
+    return [...this.businessRequests.values()].sort((a, b) => {
+      if (a.status !== b.status) return a.status === 'pending' ? -1 : 1
+      return b.createdAt.getTime() - a.createdAt.getTime()
+    })
+  }
+
+  async resolveBusinessRequest(id: string, adminId: string, decision: 'approved' | 'rejected') {
+    const request = this.businessRequests.get(id)
+    if (!request || request.status !== 'pending') return null
+    const updated = { ...request, status: decision, reviewedAt: new Date(), reviewedBy: adminId }
+    this.businessRequests.set(id, updated)
+    if (decision === 'approved') {
+      const user = this.users.get(request.userId)
+      if (user)
+        this.users.set(user.id, {
+          ...user,
+          accountKind: 'business',
+          name: request.businessName,
+          phone: request.phone
+        })
+    }
+    return updated
+  }
+
   async savePushSubscription(userId: string, subscription: PushSubscriptionRecord) {
     this.pushSubscriptions.set(`${userId}:${subscription.endpoint}`, subscription)
   }

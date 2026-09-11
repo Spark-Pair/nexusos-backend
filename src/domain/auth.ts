@@ -18,6 +18,20 @@ export interface User {
   createdAt: Date
   deletedAt: Date | null
 }
+export interface BusinessRequest {
+  id: string
+  userId: string
+  userName: string
+  userEmail: string | null
+  businessName: string
+  contactPersonName: string
+  phone: string
+  status: 'pending' | 'approved' | 'rejected'
+  createdAt: Date
+  reviewedAt: Date | null
+  reviewedBy: string | null
+}
+
 export interface AdminUserRecord {
   id: string
   name: string
@@ -54,6 +68,18 @@ export interface AuthRepository {
   listUsersForAdmin(query: string): Promise<AdminUserRecord[]>
   setUserActive(id: string, active: boolean): Promise<AdminUserRecord | null>
   deleteUser(id: string): Promise<AdminUserRecord | null>
+  createBusinessRequest(input: {
+    userId: string
+    businessName: string
+    contactPersonName: string
+    phone: string
+  }): Promise<BusinessRequest>
+  listBusinessRequests(): Promise<BusinessRequest[]>
+  resolveBusinessRequest(
+    id: string,
+    adminId: string,
+    decision: 'approved' | 'rejected'
+  ): Promise<BusinessRequest | null>
   savePushSubscription(userId: string, subscription: PushSubscriptionRecord): Promise<void>
   removePushSubscription(userId: string, endpoint: string): Promise<void>
   listPushSubscriptions(userId: string): Promise<PushSubscriptionRecord[]>

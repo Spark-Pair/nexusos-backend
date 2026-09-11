@@ -644,6 +644,54 @@ export function createApp(
     }
     response.status(201).json({ data: broadcast })
   })
+
+  app.post('/api/business-requests', limiter, async (request, response) => {
+    const current = await actor(request.header('authorization'))
+    if (current.account_kind !== 'customer')
+      throw new AuthError('Only customer accounts can request business access.', 403)
+    const data = z
+      .object({
+        business_name: z.string().trim().min(2).max(120),
+        contact_person_name: z.string().trim().min(2).max(80),
+        phone: z
+          .string()
+          .trim()
+          .regex(/^\+?[0-9][0-9\-\s()]{8,19}$/u)
+      })
+      .parse(request.body)
+    response.status(201).json({
+      data: await repository.createBusinessRequest({
+        userId: current.id,
+        businessName: data.business_name,
+        contactPersonName: data.contact_person_name,
+        phone: data.phone
+      })
+    })
+  })
+
+  app.get('/api/admin/business-requests', async (request, response) => {
+    await adminActor(request.header('authorization'))
+    response.json({ data: await repository.listBusinessRequests() })
+  })
+
+  app.post(
+    '/api/admin/business-requests/:requestId/resolve',
+    limiter,
+    async (request, response) => {
+      const admin = await adminActor(request.header('authorization'))
+      const decision = z
+        .object({ decision: z.enum(['approved', 'rejected']) })
+        .parse(request.body).decision
+      const result = await repository.resolveBusinessRequest(
+        z.string().uuid().parse(request.params.requestId),
+        admin.id,
+        decision
+      )
+      if (!result) throw new AuthError('Business request not found.', 404)
+      response.json({ data: result })
+    }
+  )
+
   app.get('/api/admin/users', async (request, response) => {
     await adminActor(request.header('authorization'))
     const query = z.string().max(100).catch('').parse(request.query.q)
