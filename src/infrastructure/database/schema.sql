@@ -143,6 +143,21 @@ CREATE TABLE IF NOT EXISTS broadcast_drafts (
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS broadcast_id uuid REFERENCES business_broadcasts(id) ON DELETE CASCADE;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS title text NOT NULL DEFAULT '';
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS image_urls jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE messages ALTER COLUMN body SET DEFAULT '';
+ALTER TABLE messages DROP CONSTRAINT IF EXISTS messages_body_check;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'messages_body_or_image_check'
+  ) THEN
+    ALTER TABLE messages ADD CONSTRAINT messages_body_or_image_check
+      CHECK (
+        char_length(body) BETWEEN 0 AND 4000
+        AND (char_length(body) > 0 OR jsonb_array_length(image_urls) > 0)
+      );
+  END IF;
+END
+$$;
 CREATE UNIQUE INDEX IF NOT EXISTS messages_broadcast_conversation_idx ON messages(broadcast_id,conversation_id) WHERE broadcast_id IS NOT NULL;
 CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now());
 DO $$
@@ -162,3 +177,4 @@ BEGIN
     INSERT INTO schema_migrations(name) VALUES('broadcast-inbox-v1');
   END IF;
 END $$;
+
