@@ -5,6 +5,18 @@ import type { AppConfig } from '../config.js'
 import type { AuthRepository } from '../domain/auth.js'
 import type { MessagingRepository } from '../domain/messaging.js'
 
+export interface RealtimePayload {
+  conversationId: string
+  title?: string
+  body?: string
+  url?: string
+  message?: unknown
+  readBy?: string
+  readAt?: string
+  deliveredBy?: string
+  deliveredAt?: string
+}
+
 export function createRealtimeGateway(
   server: HttpServer,
   config: AppConfig,
@@ -59,19 +71,10 @@ export function createRealtimeGateway(
     })
   })
   return {
-    publish(
-      userId: string,
-      payload: {
-        conversationId: string
-        title?: string
-        body?: string
-        url?: string
-        message?: unknown
-        readBy?: string
-        readAt?: string
-      }
-    ) {
+    publish(userId: string, payload: RealtimePayload) {
+      const online = (io.sockets.adapter.rooms.get(`user:${userId}`)?.size ?? 0) > 0
       io.to(`user:${userId}`).emit('conversation:updated', payload)
+      return online
     },
     close() {
       return io.close()

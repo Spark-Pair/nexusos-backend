@@ -143,6 +143,7 @@ CREATE TABLE IF NOT EXISTS broadcast_drafts (
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS broadcast_id uuid REFERENCES business_broadcasts(id) ON DELETE CASCADE;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS title text NOT NULL DEFAULT '';
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS image_urls jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS delivered_at timestamptz;
 ALTER TABLE messages ALTER COLUMN body SET DEFAULT '';
 ALTER TABLE messages DROP CONSTRAINT IF EXISTS messages_body_check;
 DO $$

@@ -262,6 +262,7 @@ export class MemoryAuthRepository
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
   }
   async markMessagesRead(conversationId: string, readerId: string) {
+    const readAt = new Date()
     for (const [id, message] of this.messages)
       if (
         message.conversationId === conversationId &&
@@ -269,7 +270,18 @@ export class MemoryAuthRepository
         !message.readAt &&
         (!message.broadcastId || !this.suppressedBroadcasts.has(message.broadcastId))
       )
-        this.messages.set(id, { ...message, readAt: new Date() })
+        this.messages.set(id, { ...message, deliveredAt: message.deliveredAt ?? readAt, readAt })
+  }
+  async markMessagesDelivered(conversationId: string, recipientId: string) {
+    const deliveredAt = new Date()
+    for (const [id, message] of this.messages)
+      if (
+        message.conversationId === conversationId &&
+        message.senderId !== recipientId &&
+        !message.deliveredAt
+      )
+        this.messages.set(id, { ...message, deliveredAt })
+    return deliveredAt
   }
   async countUnread(conversationId: string, readerId: string) {
     return (await this.listMessages(conversationId)).filter(

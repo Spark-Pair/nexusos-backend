@@ -111,6 +111,7 @@ export class MessagingService {
       body: body.trim(),
       imageUrls,
       createdAt: new Date(),
+      deliveredAt: null,
       readAt: null
     }
     await this.repository.createMessage(message)

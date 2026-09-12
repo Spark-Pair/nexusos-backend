@@ -67,22 +67,22 @@ const credentials = z.object({
   device_name: z.string().min(1).max(100).optional()
 })
 const accountKind = z.enum(['customer', 'business'])
+interface RealtimePayload {
+  conversationId: string
+  title?: string
+  body?: string
+  url?: string
+  message?: unknown
+  readBy?: string
+  readAt?: string
+  deliveredBy?: string
+  deliveredAt?: string
+}
 export function createApp(
   config: AppConfig,
   repository: AuthRepository & MessagingRepository & BroadcastRepository,
   googleDependencies: GoogleExchangeDependencies = createGoogleDependencies(config),
-  publishRealtime: (
-    userId: string,
-    payload: {
-      conversationId: string
-      title?: string
-      body?: string
-      url?: string
-      message?: unknown
-      readBy?: string
-      readAt?: string
-    }
-  ) => void = () => undefined,
+  publishRealtime: (userId: string, payload: RealtimePayload) => boolean = () => false,
   mediaStorage: MediaStorage = createMediaStorage(config)
 ) {
   const app = express()
@@ -399,8 +399,19 @@ export function createApp(
     const message = await messaging.send(current.id, conversationId, body, image_urls, client_id)
     const conversation = await repository.findConversation(conversationId)
     if (conversation) {
-      publishRealtime(conversation.customerId, { conversationId: conversation.id, message })
-      publishRealtime(conversation.businessId, { conversationId: conversation.id, message })
+      const recipientId =
+        conversation.customerId === current.id ? conversation.businessId : conversation.customerId
+      const senderDeliveredPayload = { conversationId: conversation.id, message }
+      publishRealtime(current.id, senderDeliveredPayload)
+      const delivered = publishRealtime(recipientId, { conversationId: conversation.id, message })
+      if (delivered) {
+        const deliveredAt = await repository.markMessagesDelivered(conversation.id, recipientId)
+        publishRealtime(current.id, {
+          conversationId: conversation.id,
+          deliveredBy: recipientId,
+          deliveredAt: deliveredAt.toISOString()
+        })
+      }
     }
     response.status(201).json({ data: message })
   })

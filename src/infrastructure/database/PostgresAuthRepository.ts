@@ -64,6 +64,7 @@ interface MessageRow extends QueryResultRow {
   sender_id: string
   body: string
   created_at: Date
+  delivered_at: Date | null
   read_at: Date | null
   broadcast_id: string | null
   title: string
@@ -469,7 +470,7 @@ export class PostgresAuthRepository
   }
   async createMessage(value: Message) {
     await this.pool.query(
-      'INSERT INTO messages(id,conversation_id,sender_id,body,created_at,read_at,image_urls) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(id) DO NOTHING',
+      'INSERT INTO messages(id,conversation_id,sender_id,body,created_at,read_at,delivered_at,image_urls) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(id) DO NOTHING',
       [
         value.id,
         value.conversationId,
@@ -477,6 +478,7 @@ export class PostgresAuthRepository
         value.body,
         value.createdAt,
         value.readAt,
+        value.deliveredAt ?? null,
         JSON.stringify(value.imageUrls ?? [])
       ]
     )
@@ -491,6 +493,7 @@ export class PostgresAuthRepository
           senderId: row.sender_id,
           body: row.body,
           createdAt: row.created_at,
+          deliveredAt: row.delivered_at,
           readAt: row.read_at,
           broadcastId: row.broadcast_id,
           title: row.title,
@@ -509,6 +512,7 @@ export class PostgresAuthRepository
       senderId: String(row.sender_id),
       body: String(row.body),
       createdAt: new Date(String(row.created_at)),
+      deliveredAt: row.delivered_at,
       readAt: row.read_at,
       broadcastId: row.broadcast_id,
       title: row.title,
@@ -522,9 +526,17 @@ export class PostgresAuthRepository
     )
     return result.rows.map((row) => this.toConversation(row))
   }
+  async markMessagesDelivered(conversationId: string, recipientId: string) {
+    const deliveredAt = new Date()
+    await this.pool.query(
+      'UPDATE messages SET delivered_at=$3 WHERE conversation_id=$1 AND sender_id<>$2 AND delivered_at IS NULL',
+      [conversationId, recipientId, deliveredAt]
+    )
+    return deliveredAt
+  }
   async markMessagesRead(conversationId: string, readerId: string) {
     await this.pool.query(
-      'UPDATE messages SET read_at=now() WHERE conversation_id=$1 AND sender_id<>$2 AND read_at IS NULL',
+      'UPDATE messages SET read_at=now(), delivered_at=COALESCE(delivered_at,now()) WHERE conversation_id=$1 AND sender_id<>$2 AND read_at IS NULL',
       [conversationId, readerId]
     )
   }

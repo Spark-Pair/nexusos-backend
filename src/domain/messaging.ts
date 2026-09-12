@@ -23,6 +23,7 @@ export interface Message {
   senderId: string
   body: string
   createdAt: Date
+  deliveredAt?: Date | null
   readAt: Date | null
   broadcastId?: string | null
   title?: string
@@ -51,6 +52,7 @@ export interface MessagingRepository {
   findMessage(id: string): Promise<Message | null>
   listMessages(conversationId: string): Promise<Message[]>
   listConversations(userId: string): Promise<Conversation[]>
+  markMessagesDelivered(conversationId: string, recipientId: string): Promise<Date>
   markMessagesRead(conversationId: string, readerId: string): Promise<void>
   countUnread(conversationId: string, readerId: string): Promise<number>
   findProfile(id: string): Promise<DirectoryProfile | null>
