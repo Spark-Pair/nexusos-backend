@@ -73,7 +73,15 @@ export function createApp(
   googleDependencies: GoogleExchangeDependencies = createGoogleDependencies(config),
   publishRealtime: (
     userId: string,
-    payload: { conversationId: string; title?: string; body?: string; url?: string }
+    payload: {
+      conversationId: string
+      title?: string
+      body?: string
+      url?: string
+      message?: unknown
+      readBy?: string
+      readAt?: string
+    }
   ) => void = () => undefined,
   mediaStorage: MediaStorage = createMediaStorage(config)
 ) {
@@ -335,12 +343,15 @@ export function createApp(
   })
   app.get('/api/conversations/:conversationId', async (request, response) => {
     const current = await actor(request.header('authorization'))
-    response.json({
-      data: await messaging.detail(
-        current.id,
-        z.string().uuid().parse(request.params.conversationId)
-      )
-    })
+    const conversationId = z.string().uuid().parse(request.params.conversationId)
+    const data = await messaging.detail(current.id, conversationId)
+    const readAt = new Date().toISOString()
+    const recipientId =
+      data.conversation.customerId === current.id
+        ? data.conversation.businessId
+        : data.conversation.customerId
+    publishRealtime(recipientId, { conversationId, readBy: current.id, readAt })
+    response.json({ data })
   })
   app.patch('/api/conversations/:conversationId/state', limiter, async (request, response) => {
     const current = await actor(request.header('authorization'))
@@ -388,8 +399,8 @@ export function createApp(
     const message = await messaging.send(current.id, conversationId, body, image_urls, client_id)
     const conversation = await repository.findConversation(conversationId)
     if (conversation) {
-      publishRealtime(conversation.customerId, { conversationId: conversation.id })
-      publishRealtime(conversation.businessId, { conversationId: conversation.id })
+      publishRealtime(conversation.customerId, { conversationId: conversation.id, message })
+      publishRealtime(conversation.businessId, { conversationId: conversation.id, message })
     }
     response.status(201).json({ data: message })
   })
