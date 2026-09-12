@@ -131,6 +131,28 @@ export function createApp(
     standardHeaders: true,
     legacyHeaders: false
   })
+
+  const notifyBroadcast = async (broadcast: { id: string; title: string; body: string }) => {
+    const delivered = await repository.listBroadcastConversations(broadcast.id).catch(() => [])
+    for (const conversation of delivered) {
+      try {
+        const notification = {
+          title: 'Broadcast: ' + broadcast.title,
+          body: broadcast.body,
+          url: `/app/chats/${conversation.id}`
+        }
+        publishRealtime(conversation.customerId, {
+          conversationId: conversation.id,
+          ...notification
+        })
+        publishRealtime(conversation.businessId, { conversationId: conversation.id })
+        await push.send(conversation.customerId, notification)
+      } catch {
+        // Clients also reconcile from the inbox on reconnect and periodic refresh.
+      }
+    }
+  }
+
   app.get('/api/health', (_request, response) => response.json({ status: 'ok' }))
   app.get('/api/push/public-key', (_request, response) =>
     response.json({ public_key: config.VAPID_PUBLIC_KEY ?? null })
@@ -349,11 +371,21 @@ export function createApp(
   })
   app.post('/api/conversations/:conversationId/messages', limiter, async (request, response) => {
     const current = await actor(request.header('authorization'))
-    const { body, client_id } = z
-      .object({ body: z.string().trim().min(1).max(4000), client_id: z.string().uuid().optional() })
+    const { body, image_urls, client_id } = z
+      .object({
+        body: z.string().trim().max(4000).default(''),
+        image_urls: z
+          .array(z.string().regex(/^\/api\/media\/[a-z]+-[a-f0-9-]+\.(?:jpg|png|webp)$/u))
+          .max(10)
+          .default([]),
+        client_id: z.string().uuid().optional()
+      })
+      .refine((value) => value.body.length > 0 || value.image_urls.length > 0, {
+        message: 'Write a message or attach an image.'
+      })
       .parse(request.body)
     const conversationId = z.string().uuid().parse(request.params.conversationId)
-    const message = await messaging.send(current.id, conversationId, body, client_id)
+    const message = await messaging.send(current.id, conversationId, body, image_urls, client_id)
     const conversation = await repository.findConversation(conversationId)
     if (conversation) {
       publishRealtime(conversation.customerId, { conversationId: conversation.id })
@@ -373,6 +405,15 @@ export function createApp(
       throw new AuthError('Business access is required.', 403)
     response.json({ data: await repository.listConnectedCustomers(current.id) })
   })
+
+  app.post('/api/media/images', limiter, upload.array('images', 10), async (request, response) => {
+    await actor(request.header('authorization'))
+    const files = request.files as Express.Multer.File[]
+    if (!files.length) throw new AuthError('Choose at least one image.', 422)
+    const saved = await Promise.all(files.map((file) => mediaStorage.saveImage(file)))
+    response.status(201).json({ data: saved.map((key) => ({ url: `/api/media/${key}` })) })
+  })
+
   app.post(
     '/api/broadcasts/images',
     limiter,
@@ -544,47 +585,40 @@ export function createApp(
       throw new AuthError('Business access is required.', 403)
     const data = z
       .object({
-        list_id: z.string().uuid(),
+        list_id: z.string().uuid().optional(),
+        list_ids: z.array(z.string().uuid()).min(1).max(20).optional(),
         title: z.string().trim().min(1).max(100),
         body: z.string().trim().min(1).max(4000),
         image_urls: z
-          .array(z.string().regex(/^\/api\/media\/broadcasts-[a-f0-9-]+\.(?:jpg|png|webp)$/u))
+          .array(z.string().regex(/^\/api\/media\/[a-z]+-[a-f0-9-]+\.(?:jpg|png|webp)$/u))
           .max(10)
-          .default([])
+          .default([]),
+        scheduled_for: z.coerce.date().optional()
+      })
+      .refine((value) => value.list_id || value.list_ids?.length, {
+        message: 'Choose at least one broadcast list.'
       })
       .parse(request.body)
-    const list = (await repository.listBroadcastLists(current.id)).find(
-      (x) => x.id === data.list_id
-    )
-    if (!list) throw new AuthError('Broadcast list not found.', 404)
+    const selectedListIds = [...new Set(data.list_ids ?? (data.list_id ? [data.list_id] : []))]
+    const lists = await repository.listBroadcastLists(current.id)
+    const selectedLists = lists.filter((item) => selectedListIds.includes(item.id))
+    if (selectedLists.length !== selectedListIds.length)
+      throw new AuthError('Broadcast list not found.', 404)
+    const now = new Date()
+    const scheduledFor = data.scheduled_for && data.scheduled_for > now ? data.scheduled_for : null
     const broadcast = await repository.createBroadcast({
       id: crypto.randomUUID(),
       businessId: current.id,
-      listId: list.id,
+      listId: selectedLists[0]!.id,
+      listIds: selectedListIds,
       title: data.title,
       body: data.body,
       imageUrls: data.image_urls,
-      publishedAt: new Date()
+      publishedAt: scheduledFor ?? now,
+      scheduledFor,
+      deliveredAt: scheduledFor ? null : now
     })
-    // Notification failure cannot turn a committed broadcast into a failed publish response.
-    const delivered = await repository.listBroadcastConversations(broadcast.id).catch(() => [])
-    for (const conversation of delivered) {
-      try {
-        const notification = {
-          title: 'Broadcast: ' + data.title,
-          body: data.body,
-          url: `/app/chats/${conversation.id}`
-        }
-        publishRealtime(conversation.customerId, {
-          conversationId: conversation.id,
-          ...notification
-        })
-        publishRealtime(conversation.businessId, { conversationId: conversation.id })
-        await push.send(conversation.customerId, notification)
-      } catch {
-        // Clients also reconcile from the inbox on reconnect and periodic refresh.
-      }
-    }
+    if (!scheduledFor) await notifyBroadcast(broadcast)
     response.status(201).json({ data: broadcast })
   })
 

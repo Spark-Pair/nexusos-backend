@@ -10,10 +10,13 @@ export interface BusinessBroadcast {
   id: string
   businessId: string
   listId: string
+  listIds?: string[]
   title: string
   body: string
   imageUrls: string[]
   publishedAt: Date
+  scheduledFor?: Date | null
+  deliveredAt?: Date | null
   businessName?: string
   readAt?: Date | null
   saved?: boolean
@@ -49,6 +52,7 @@ export interface BroadcastRepository {
   deleteBroadcastList(businessId: string, id: string): Promise<boolean>
   isAcceptedCustomer(businessId: string, customerId: string): Promise<boolean>
   createBroadcast(value: BusinessBroadcast): Promise<BusinessBroadcast>
+  deliverDueBroadcasts(now: Date): Promise<BusinessBroadcast[]>
   listBroadcastConversations(
     broadcastId: string
   ): Promise<Array<{ id: string; customerId: string; businessId: string }>>

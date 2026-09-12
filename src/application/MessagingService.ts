@@ -83,7 +83,13 @@ export class MessagingService {
     await this.repository.updateConversation(conversation)
     return conversation
   }
-  async send(actorId: string, id: string, body: string, clientId: string = crypto.randomUUID()) {
+  async send(
+    actorId: string,
+    id: string,
+    body: string,
+    imageUrls: string[] = [],
+    clientId: string = crypto.randomUUID()
+  ) {
     const conversation = await this.requireParticipant(actorId, id)
     if (conversation.status !== 'accepted')
       throw new AuthError('Accept the invitation before messaging.', 403)
@@ -92,7 +98,8 @@ export class MessagingService {
       if (
         previous.senderId !== actorId ||
         previous.conversationId !== id ||
-        previous.body !== body.trim()
+        previous.body !== body.trim() ||
+        JSON.stringify(previous.imageUrls ?? []) !== JSON.stringify(imageUrls)
       )
         throw new AuthError('This message identifier has already been used.', 409)
       return previous
@@ -102,6 +109,7 @@ export class MessagingService {
       conversationId: id,
       senderId: actorId,
       body: body.trim(),
+      imageUrls,
       createdAt: new Date(),
       readAt: null
     }
@@ -121,7 +129,7 @@ export class MessagingService {
     const sender = await this.repository.findProfile(actorId)
     await this.notify?.(recipientId, {
       title: sender?.name ?? 'NexusOS',
-      body: message.body,
+      body: message.body || (imageUrls.length ? 'Sent a photo' : ''),
       url: `/app/chats/${conversation.id}`
     }).catch(() => undefined)
     return persisted

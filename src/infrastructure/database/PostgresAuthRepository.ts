@@ -1,4 +1,4 @@
-import type { Pool, QueryResultRow } from 'pg'
+import type { Pool, PoolClient, QueryResultRow } from 'pg'
 import type {
   AuthRepository,
   BusinessRequest,
@@ -469,8 +469,16 @@ export class PostgresAuthRepository
   }
   async createMessage(value: Message) {
     await this.pool.query(
-      'INSERT INTO messages(id,conversation_id,sender_id,body,created_at,read_at) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO NOTHING',
-      [value.id, value.conversationId, value.senderId, value.body, value.createdAt, value.readAt]
+      'INSERT INTO messages(id,conversation_id,sender_id,body,created_at,read_at,image_urls) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(id) DO NOTHING',
+      [
+        value.id,
+        value.conversationId,
+        value.senderId,
+        value.body,
+        value.createdAt,
+        value.readAt,
+        JSON.stringify(value.imageUrls ?? [])
+      ]
     )
   }
   async findMessage(id: string): Promise<Message | null> {
@@ -611,12 +619,44 @@ export class PostgresAuthRepository
       ).rowCount === 1
     )
   }
+  private async deliverBroadcast(client: Pool | PoolClient, broadcastId: string) {
+    await client.query(
+      `INSERT INTO messages(id,conversation_id,sender_id,body,created_at,read_at,broadcast_id,title,image_urls)
+      SELECT gen_random_uuid(),conversation_id,business_id,body,published_at,NULL,id,title,image_urls
+      FROM (
+        SELECT DISTINCT ON (c.id) c.id conversation_id,b.business_id,b.body,b.published_at,b.id,b.title,b.image_urls
+        FROM business_broadcasts b
+        JOIN broadcast_list_targets t ON t.broadcast_id=b.id
+        JOIN broadcast_list_members m ON m.list_id=t.list_id
+        JOIN conversations c ON c.business_id=b.business_id AND c.customer_id=m.customer_id AND c.status='accepted'
+        JOIN users u ON u.id=m.customer_id AND u.is_active=true AND u.deleted_at IS NULL
+        LEFT JOIN profile_settings p ON p.user_id=u.id
+        WHERE b.id=$1 AND b.suppressed_at IS NULL AND COALESCE(p.allow_broadcasts,true)=true
+        ORDER BY c.id
+      ) recipients
+      ON CONFLICT (broadcast_id,conversation_id) WHERE broadcast_id IS NOT NULL DO NOTHING`,
+      [broadcastId]
+    )
+    await client.query(
+      `UPDATE conversations SET updated_at=b.published_at
+       FROM business_broadcasts b
+       WHERE b.id=$1 AND conversations.id IN (SELECT conversation_id FROM messages WHERE broadcast_id=$1)`,
+      [broadcastId]
+    )
+    await client.query('UPDATE business_broadcasts SET delivered_at=now() WHERE id=$1', [
+      broadcastId
+    ])
+  }
+
   async createBroadcast(value: BusinessBroadcast) {
     const client = await this.pool.connect()
+    const listIds = [...new Set(value.listIds?.length ? value.listIds : [value.listId])]
+    const scheduledFor = value.scheduledFor ?? null
+    const shouldDeliver = !scheduledFor || scheduledFor <= new Date()
     try {
       await client.query('BEGIN')
       await client.query(
-        'INSERT INTO business_broadcasts(id,business_id,list_id,title,body,image_urls,published_at) VALUES($1,$2,$3,$4,$5,$6,$7)',
+        'INSERT INTO business_broadcasts(id,business_id,list_id,title,body,image_urls,published_at,scheduled_for,delivered_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)',
         [
           value.id,
           value.businessId,
@@ -624,26 +664,61 @@ export class PostgresAuthRepository
           value.title,
           value.body,
           JSON.stringify(value.imageUrls),
-          value.publishedAt
+          value.publishedAt,
+          scheduledFor,
+          shouldDeliver ? value.publishedAt : null
         ]
       )
-      await client.query(
-        `INSERT INTO messages(id,conversation_id,sender_id,body,created_at,read_at,broadcast_id,title,image_urls)
-        SELECT gen_random_uuid(),c.id,b.business_id,b.body,b.published_at,NULL,b.id,b.title,b.image_urls
-        FROM business_broadcasts b JOIN broadcast_list_members m ON m.list_id=b.list_id
-        JOIN conversations c ON c.business_id=b.business_id AND c.customer_id=m.customer_id AND c.status='accepted'
-        JOIN users u ON u.id=m.customer_id AND u.is_active=true AND u.deleted_at IS NULL
-        LEFT JOIN profile_settings p ON p.user_id=u.id
-        WHERE b.id=$1 AND b.suppressed_at IS NULL AND COALESCE(p.allow_broadcasts,true)=true
-        ON CONFLICT (broadcast_id,conversation_id) WHERE broadcast_id IS NOT NULL DO NOTHING`,
-        [value.id]
-      )
-      await client.query(
-        'UPDATE conversations SET updated_at=$2 WHERE id IN (SELECT conversation_id FROM messages WHERE broadcast_id=$1)',
-        [value.id, value.publishedAt]
-      )
+      for (const listId of listIds)
+        await client.query(
+          'INSERT INTO broadcast_list_targets(broadcast_id,list_id) VALUES($1,$2) ON CONFLICT DO NOTHING',
+          [value.id, listId]
+        )
+      if (shouldDeliver) await this.deliverBroadcast(client, value.id)
       await client.query('COMMIT')
-      return value
+      return {
+        ...value,
+        listIds,
+        scheduledFor,
+        deliveredAt: shouldDeliver ? value.publishedAt : null
+      }
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  async deliverDueBroadcasts(now: Date) {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const result = await client.query(
+        `SELECT * FROM business_broadcasts
+         WHERE delivered_at IS NULL AND scheduled_for IS NOT NULL AND scheduled_for <= $1 AND suppressed_at IS NULL
+         ORDER BY scheduled_for ASC
+         FOR UPDATE SKIP LOCKED
+         LIMIT 20`,
+        [now]
+      )
+      const delivered: BusinessBroadcast[] = []
+      for (const row of result.rows as Array<Record<string, unknown>>) {
+        await this.deliverBroadcast(client, String(row.id))
+        delivered.push({
+          id: String(row.id),
+          businessId: String(row.business_id),
+          listId: String(row.list_id),
+          title: String(row.title),
+          body: String(row.body),
+          imageUrls: row.image_urls as string[],
+          publishedAt: new Date(String(row.published_at)),
+          scheduledFor: row.scheduled_for instanceof Date ? row.scheduled_for : null,
+          deliveredAt: now
+        })
+      }
+      await client.query('COMMIT')
+      return delivered
     } catch (error) {
       await client.query('ROLLBACK')
       throw error
@@ -671,6 +746,8 @@ export class PostgresAuthRepository
       body: String(r.body),
       imageUrls: r.image_urls as string[],
       publishedAt: new Date(String(r.published_at)),
+      scheduledFor: r.scheduled_for instanceof Date ? r.scheduled_for : null,
+      deliveredAt: r.delivered_at instanceof Date ? r.delivered_at : null,
       businessName: String(r.business_name),
       readAt: r.read_at instanceof Date ? r.read_at : null,
       saved: Boolean(r.saved),

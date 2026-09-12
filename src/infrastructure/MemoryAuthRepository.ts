@@ -331,15 +331,17 @@ export class MemoryAuthRepository
       (x) => x.businessId === businessId && x.customerId === customerId && x.status === 'accepted'
     )
   }
-  async createBroadcast(value: BusinessBroadcast) {
-    this.broadcasts.set(value.id, value)
-    const list = this.broadcastLists.get(value.listId)
+  private deliverBroadcast(value: BusinessBroadcast) {
+    const listIds = [...new Set(value.listIds?.length ? value.listIds : [value.listId])]
+    const customerIds = new Set(
+      listIds.flatMap((listId) => this.broadcastLists.get(listId)?.customerIds ?? [])
+    )
     for (const conversation of this.conversations.values()) {
       const customer = this.users.get(conversation.customerId)
       if (
         conversation.businessId !== value.businessId ||
         conversation.status !== 'accepted' ||
-        !list?.customerIds.includes(conversation.customerId) ||
+        !customerIds.has(conversation.customerId) ||
         !customer?.isActive ||
         customer.deletedAt ||
         this.profileSettings.get(customer.id)?.allowBroadcasts === false
@@ -359,8 +361,35 @@ export class MemoryAuthRepository
       this.messages.set(message.id, message)
       this.conversations.set(conversation.id, { ...conversation, updatedAt: value.publishedAt })
     }
-    return value
   }
+
+  async createBroadcast(value: BusinessBroadcast) {
+    const listIds = [...new Set(value.listIds?.length ? value.listIds : [value.listId])]
+    const scheduledFor = value.scheduledFor ?? null
+    const shouldDeliver = !scheduledFor || scheduledFor <= new Date()
+    const stored = {
+      ...value,
+      listIds,
+      scheduledFor,
+      deliveredAt: shouldDeliver ? value.publishedAt : null
+    }
+    this.broadcasts.set(value.id, stored)
+    if (shouldDeliver) this.deliverBroadcast(stored)
+    return stored
+  }
+
+  async deliverDueBroadcasts(now: Date) {
+    const delivered: BusinessBroadcast[] = []
+    for (const item of this.broadcasts.values()) {
+      if (item.deliveredAt || !item.scheduledFor || item.scheduledFor > now) continue
+      const next = { ...item, deliveredAt: now }
+      this.broadcasts.set(item.id, next)
+      this.deliverBroadcast(next)
+      delivered.push(next)
+    }
+    return delivered
+  }
+
   async listBroadcastConversations(broadcastId: string) {
     const ids = new Set(
       [...this.messages.values()]

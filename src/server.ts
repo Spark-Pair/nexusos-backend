@@ -24,7 +24,31 @@ server.listen(config.PORT, '0.0.0.0', () =>
   console.log(`NexusOS API listening on port ${config.PORT}`)
 )
 
-const shutdown = () =>
+const runScheduledBroadcasts = async () => {
+  try {
+    const due = await repository.deliverDueBroadcasts(new Date())
+    for (const broadcast of due) {
+      const conversations = await repository.listBroadcastConversations(broadcast.id)
+      for (const conversation of conversations) {
+        publishRealtime(conversation.customerId, {
+          conversationId: conversation.id,
+          title: 'Broadcast: ' + broadcast.title,
+          body: broadcast.body,
+          url: `/app/chats/${conversation.id}`
+        })
+        publishRealtime(conversation.businessId, { conversationId: conversation.id })
+      }
+    }
+  } catch (error) {
+    console.error('Scheduled broadcast delivery failed', error)
+  }
+}
+const scheduleTimer = setInterval(() => void runScheduledBroadcasts(), 30000)
+void runScheduledBroadcasts()
+
+const shutdown = () => {
+  clearInterval(scheduleTimer)
   void realtime.close().then(() => server.close(() => void pool.end().then(() => process.exit(0))))
+}
 process.on('SIGINT', shutdown)
 process.on('SIGTERM', shutdown)

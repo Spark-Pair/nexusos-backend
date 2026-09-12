@@ -110,6 +110,13 @@ CREATE TABLE IF NOT EXISTS business_broadcasts (
 );
 ALTER TABLE business_broadcasts ADD COLUMN IF NOT EXISTS suppressed_at timestamptz;
 ALTER TABLE business_broadcasts ADD COLUMN IF NOT EXISTS suppressed_by uuid REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE business_broadcasts ADD COLUMN IF NOT EXISTS scheduled_for timestamptz;
+ALTER TABLE business_broadcasts ADD COLUMN IF NOT EXISTS delivered_at timestamptz;
+CREATE TABLE IF NOT EXISTS broadcast_list_targets (
+  broadcast_id uuid NOT NULL REFERENCES business_broadcasts(id) ON DELETE CASCADE,
+  list_id uuid NOT NULL REFERENCES broadcast_lists(id) ON DELETE CASCADE,
+  PRIMARY KEY(broadcast_id,list_id)
+);
 CREATE TABLE IF NOT EXISTS broadcast_customer_states (
   broadcast_id uuid NOT NULL REFERENCES business_broadcasts(id) ON DELETE CASCADE,
   customer_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
