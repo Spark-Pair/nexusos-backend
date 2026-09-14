@@ -610,21 +610,27 @@ export class PostgresAuthRepository
   async getConversationState(userId: string, conversationId: string) {
     const row = (
       await this.pool.query(
-        'SELECT archived,muted FROM conversation_user_states WHERE user_id=$1 AND conversation_id=$2',
+        'SELECT archived,muted,pinned FROM conversation_user_states WHERE user_id=$1 AND conversation_id=$2',
         [userId, conversationId]
       )
-    ).rows[0] as { archived: boolean; muted: boolean } | undefined
-    return row ?? { archived: false, muted: false }
+    ).rows[0] as { archived: boolean; muted: boolean; pinned: boolean } | undefined
+    return row ?? { archived: false, muted: false, pinned: false }
   }
   async setConversationState(
     userId: string,
     conversationId: string,
-    state: { archived?: boolean; muted?: boolean }
+    state: { archived?: boolean; muted?: boolean; pinned?: boolean }
   ) {
     const current = await this.getConversationState(userId, conversationId)
     await this.pool.query(
-      `INSERT INTO conversation_user_states(user_id,conversation_id,archived,muted) VALUES($1,$2,$3,$4) ON CONFLICT(user_id,conversation_id) DO UPDATE SET archived=$3,muted=$4,updated_at=now()`,
-      [userId, conversationId, state.archived ?? current.archived, state.muted ?? current.muted]
+      `INSERT INTO conversation_user_states(user_id,conversation_id,archived,muted,pinned) VALUES($1,$2,$3,$4,$5) ON CONFLICT(user_id,conversation_id) DO UPDATE SET archived=$3,muted=$4,pinned=$5,updated_at=now()`,
+      [
+        userId,
+        conversationId,
+        state.archived ?? current.archived,
+        state.muted ?? current.muted,
+        state.pinned ?? current.pinned
+      ]
     )
   }
   async listBroadcastLists(businessId: string) {

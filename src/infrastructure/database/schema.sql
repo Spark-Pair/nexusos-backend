@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS conversation_user_states (
  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
  conversation_id uuid NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
  archived boolean NOT NULL DEFAULT false, muted boolean NOT NULL DEFAULT false,
+ pinned boolean NOT NULL DEFAULT false,
  updated_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(user_id,conversation_id)
 );
 CREATE TABLE IF NOT EXISTS messages (
@@ -81,6 +82,7 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 CREATE INDEX IF NOT EXISTS messages_conversation_idx ON messages(conversation_id, created_at);
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS read_at timestamptz;
+ALTER TABLE conversation_user_states ADD COLUMN IF NOT EXISTS pinned boolean NOT NULL DEFAULT false;
 CREATE TABLE IF NOT EXISTS push_subscriptions (
   user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   endpoint text NOT NULL,

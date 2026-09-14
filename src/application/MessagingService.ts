@@ -172,7 +172,11 @@ export class MessagingService {
   async setState(
     actorId: string,
     id: string,
-    state: { archived?: boolean | undefined; muted?: boolean | undefined }
+    state: {
+      archived?: boolean | undefined
+      muted?: boolean | undefined
+      pinned?: boolean | undefined
+    }
   ) {
     await this.requireParticipant(actorId, id)
     await this.repository.setConversationState(actorId, id, state)

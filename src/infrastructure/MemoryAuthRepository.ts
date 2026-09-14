@@ -21,7 +21,10 @@ export class MemoryAuthRepository
   private readonly follows = new Set<string>()
   private readonly conversations = new Map<string, Conversation>()
   private readonly messages = new Map<string, Message>()
-  private readonly conversationStates = new Map<string, { archived: boolean; muted: boolean }>()
+  private readonly conversationStates = new Map<
+    string,
+    { archived: boolean; muted: boolean; pinned: boolean }
+  >()
   private readonly pushSubscriptions = new Map<string, PushSubscriptionRecord>()
   private readonly profileSettings = new Map<string, ProfileSettings>()
   private readonly businessRequests = new Map<string, BusinessRequest>()
@@ -330,14 +333,15 @@ export class MemoryAuthRepository
     return (
       this.conversationStates.get(`${userId}:${conversationId}`) ?? {
         archived: false,
-        muted: false
+        muted: false,
+        pinned: false
       }
     )
   }
   async setConversationState(
     userId: string,
     conversationId: string,
-    state: { archived?: boolean; muted?: boolean }
+    state: { archived?: boolean; muted?: boolean; pinned?: boolean }
   ) {
     const key = `${userId}:${conversationId}`
     this.conversationStates.set(key, {

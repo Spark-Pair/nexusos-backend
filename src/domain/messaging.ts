@@ -43,6 +43,7 @@ export interface ConversationSummary extends Conversation {
   unreadCount: number
   archived: boolean
   muted: boolean
+  pinned: boolean
 }
 export interface MessagingRepository {
   searchProfiles(
@@ -74,10 +75,14 @@ export interface MessagingRepository {
   getConversationState(
     userId: string,
     conversationId: string
-  ): Promise<{ archived: boolean; muted: boolean }>
+  ): Promise<{ archived: boolean; muted: boolean; pinned: boolean }>
   setConversationState(
     userId: string,
     conversationId: string,
-    state: { archived?: boolean | undefined; muted?: boolean | undefined }
+    state: {
+      archived?: boolean | undefined
+      muted?: boolean | undefined
+      pinned?: boolean | undefined
+    }
   ): Promise<void>
 }

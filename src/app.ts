@@ -362,7 +362,11 @@ export function createApp(
   app.patch('/api/conversations/:conversationId/state', limiter, async (request, response) => {
     const current = await actor(request.header('authorization'))
     const state = z
-      .object({ archived: z.boolean().optional(), muted: z.boolean().optional() })
+      .object({
+        archived: z.boolean().optional(),
+        muted: z.boolean().optional(),
+        pinned: z.boolean().optional()
+      })
       .refine((value) => Object.keys(value).length > 0)
       .parse(request.body)
     await messaging.setState(
