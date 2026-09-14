@@ -12,13 +12,27 @@ export interface MediaReadResult {
 
 export interface MediaStorage {
   saveImage(file: { buffer: Buffer; mimetype: string; originalname: string }): Promise<string>
-  readImage(key: string): Promise<MediaReadResult>
+  saveAudio(file: { buffer: Buffer; mimetype: string; originalname: string }): Promise<string>
+  readMedia(key: string): Promise<MediaReadResult>
 }
 
 const extensionFor = (mimeType: string) =>
   mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg'
 
-export const mediaKeySchema = /^broadcasts-[a-f0-9-]+\.(?:jpg|png|webp)$/u
+const audioExtensionFor = (mimeType: string) => (mimeType === 'audio/mpeg' ? 'mp3' : 'webm')
+
+const contentTypeFor = (key: string) =>
+  key.endsWith('.png')
+    ? 'image/png'
+    : key.endsWith('.webp')
+      ? 'image/webp'
+      : key.endsWith('.webm')
+        ? 'audio/webm'
+        : key.endsWith('.mp3')
+          ? 'audio/mpeg'
+          : 'image/jpeg'
+
+export const mediaKeySchema = /^(?:broadcasts|audio)-[a-f0-9-]+\.(?:jpg|png|webp|webm|mp3)$/u
 
 class LocalMediaStorage implements MediaStorage {
   private readonly directory = resolve(process.cwd(), 'uploads')
@@ -30,14 +44,17 @@ class LocalMediaStorage implements MediaStorage {
     return key
   }
 
-  readImage(key: string) {
+  async saveAudio(file: { buffer: Buffer; mimetype: string }) {
+    await mkdir(this.directory, { recursive: true })
+    const key = `audio-${crypto.randomUUID()}.${audioExtensionFor(file.mimetype)}`
+    await writeFile(resolve(this.directory, key), file.buffer)
+    return key
+  }
+
+  readMedia(key: string) {
     return Promise.resolve({
       body: createReadStream(resolve(this.directory, key)),
-      contentType: key.endsWith('.png')
-        ? 'image/png'
-        : key.endsWith('.webp')
-          ? 'image/webp'
-          : 'image/jpeg'
+      contentType: contentTypeFor(key)
     })
   }
 }
@@ -72,7 +89,21 @@ class R2MediaStorage implements MediaStorage {
     return key
   }
 
-  async readImage(key: string) {
+  async saveAudio(file: { buffer: Buffer; mimetype: string }) {
+    const key = `audio-${crypto.randomUUID()}.${audioExtensionFor(file.mimetype)}`
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: file.buffer,
+        ContentType: file.mimetype,
+        CacheControl: 'private, max-age=31536000, immutable'
+      })
+    )
+    return key
+  }
+
+  async readMedia(key: string) {
     const object = await this.client.send(
       new GetObjectCommand({
         Bucket: this.bucket,
@@ -83,9 +114,7 @@ class R2MediaStorage implements MediaStorage {
       throw new Error('Media object body is unavailable.')
     return {
       body: object.Body as NodeJS.ReadableStream,
-      contentType:
-        object.ContentType ??
-        (key.endsWith('.png') ? 'image/png' : key.endsWith('.webp') ? 'image/webp' : 'image/jpeg'),
+      contentType: object.ContentType ?? contentTypeFor(key),
       contentLength: object.ContentLength
     }
   }

@@ -28,6 +28,7 @@ export interface Message {
   broadcastId?: string | null
   title?: string
   imageUrls?: string[]
+  audioUrl?: string | null
   replyToMessageId?: string | null
   replyToBody?: string | null
   replyToSenderId?: string | null

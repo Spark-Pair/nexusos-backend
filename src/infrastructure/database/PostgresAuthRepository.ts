@@ -69,6 +69,7 @@ interface MessageRow extends QueryResultRow {
   broadcast_id: string | null
   title: string
   image_urls: string[]
+  audio_url: string | null
   reply_to_message_id: string | null
   reply_to_body: string | null
   reply_to_sender_id: string | null
@@ -473,7 +474,7 @@ export class PostgresAuthRepository
   }
   async createMessage(value: Message) {
     await this.pool.query(
-      'INSERT INTO messages(id,conversation_id,sender_id,body,created_at,read_at,delivered_at,image_urls,reply_to_message_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(id) DO NOTHING',
+      'INSERT INTO messages(id,conversation_id,sender_id,body,created_at,read_at,delivered_at,image_urls,audio_url,reply_to_message_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(id) DO NOTHING',
       [
         value.id,
         value.conversationId,
@@ -483,6 +484,7 @@ export class PostgresAuthRepository
         value.readAt,
         value.deliveredAt ?? null,
         JSON.stringify(value.imageUrls ?? []),
+        value.audioUrl ?? null,
         value.replyToMessageId ?? null
       ]
     )
@@ -505,6 +507,7 @@ export class PostgresAuthRepository
           broadcastId: row.broadcast_id,
           title: row.title,
           imageUrls: row.image_urls,
+          audioUrl: row.audio_url,
           replyToMessageId: row.reply_to_message_id,
           replyToBody: row.reply_to_body,
           replyToSenderId: row.reply_to_sender_id
@@ -527,6 +530,7 @@ export class PostgresAuthRepository
       broadcastId: row.broadcast_id,
       title: row.title,
       imageUrls: row.image_urls,
+      audioUrl: row.audio_url,
       replyToMessageId: row.reply_to_message_id,
       replyToBody: row.reply_to_body,
       replyToSenderId: row.reply_to_sender_id

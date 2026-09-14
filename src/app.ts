@@ -95,6 +95,12 @@ export function createApp(
     fileFilter: (_request, file, done) =>
       done(null, ['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype))
   })
+  const audioUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+    fileFilter: (_request, file, done) =>
+      done(null, ['audio/webm', 'audio/mpeg'].includes(file.mimetype))
+  })
   const auth = new AuthService(repository, config)
   const push = new PushNotificationService(repository, config)
   const messaging = new MessagingService(repository, async (userId, payload) => {
@@ -126,7 +132,7 @@ export function createApp(
   )
   app.get('/api/media/:key', async (request, response) => {
     const key = z.string().regex(mediaKeySchema).parse(request.params.key)
-    const image = await mediaStorage.readImage(key)
+    const image = await mediaStorage.readMedia(key)
     response.setHeader('Content-Type', image.contentType)
     response.setHeader('Cache-Control', 'private, max-age=31536000, immutable')
     response.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
@@ -382,18 +388,23 @@ export function createApp(
   })
   app.post('/api/conversations/:conversationId/messages', limiter, async (request, response) => {
     const current = await actor(request.header('authorization'))
-    const { body, image_urls, client_id, reply_to_message_id } = z
+    const { body, image_urls, audio_url, client_id, reply_to_message_id } = z
       .object({
         body: z.string().trim().max(4000).default(''),
         image_urls: z
           .array(z.string().regex(/^\/api\/media\/[a-z]+-[a-f0-9-]+\.(?:jpg|png|webp)$/u))
           .max(10)
           .default([]),
+        audio_url: z
+          .string()
+          .regex(/^\/api\/media\/audio-[a-f0-9-]+\.(?:webm|mp3)$/u)
+          .nullable()
+          .optional(),
         client_id: z.string().uuid().optional(),
         reply_to_message_id: z.string().uuid().nullable().optional()
       })
-      .refine((value) => value.body.length > 0 || value.image_urls.length > 0, {
-        message: 'Write a message or attach an image.'
+      .refine((value) => value.body.length > 0 || value.image_urls.length > 0 || value.audio_url, {
+        message: 'Write a message or attach media.'
       })
       .parse(request.body)
     const conversationId = z.string().uuid().parse(request.params.conversationId)
@@ -402,6 +413,7 @@ export function createApp(
       conversationId,
       body,
       image_urls,
+      audio_url ?? null,
       client_id,
       reply_to_message_id ?? null
     )
@@ -442,6 +454,14 @@ export function createApp(
     if (!files.length) throw new AuthError('Choose at least one image.', 422)
     const saved = await Promise.all(files.map((file) => mediaStorage.saveImage(file)))
     response.status(201).json({ data: saved.map((key) => ({ url: `/api/media/${key}` })) })
+  })
+
+  app.post('/api/media/audio', limiter, audioUpload.single('audio'), async (request, response) => {
+    await actor(request.header('authorization'))
+    const file = request.file as Express.Multer.File | undefined
+    if (!file) throw new AuthError('Record audio first.', 422)
+    const key = await mediaStorage.saveAudio(file)
+    response.status(201).json({ data: { url: `/api/media/${key}` } })
   })
 
   app.post(
