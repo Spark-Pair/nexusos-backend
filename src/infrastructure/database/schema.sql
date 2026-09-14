@@ -149,6 +149,7 @@ ALTER TABLE messages ADD COLUMN IF NOT EXISTS delivered_at timestamptz;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS edited_at timestamptz;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_message_id uuid REFERENCES messages(id) ON DELETE SET NULL;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS forwarded_at timestamptz;
 ALTER TABLE messages ALTER COLUMN body SET DEFAULT '';
 ALTER TABLE messages DROP CONSTRAINT IF EXISTS messages_body_check;
 ALTER TABLE messages DROP CONSTRAINT IF EXISTS messages_body_or_image_check;

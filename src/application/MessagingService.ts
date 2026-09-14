@@ -90,7 +90,8 @@ export class MessagingService {
     imageUrls: string[] = [],
     audioUrl: string | null = null,
     clientId: string = crypto.randomUUID(),
-    replyToMessageId: string | null = null
+    replyToMessageId: string | null = null,
+    forwarded: boolean = false
   ) {
     const conversation = await this.requireParticipant(actorId, id)
     if (conversation.status !== 'accepted')
@@ -102,7 +103,8 @@ export class MessagingService {
         previous.conversationId !== id ||
         previous.body !== body.trim() ||
         JSON.stringify(previous.imageUrls ?? []) !== JSON.stringify(imageUrls) ||
-        (previous.audioUrl ?? null) !== audioUrl
+        (previous.audioUrl ?? null) !== audioUrl ||
+        Boolean(previous.forwardedAt) !== forwarded
       )
         throw new AuthError('This message identifier has already been used.', 409)
       return previous
@@ -120,6 +122,7 @@ export class MessagingService {
       imageUrls,
       audioUrl,
       replyToMessageId,
+      forwardedAt: forwarded ? new Date() : null,
       createdAt: new Date(),
       deliveredAt: null,
       readAt: null
@@ -140,7 +143,9 @@ export class MessagingService {
     const sender = await this.repository.findProfile(actorId)
     await this.notify?.(recipientId, {
       title: sender?.name ?? 'NexusOS',
-      body: message.body || (audioUrl ? 'Sent a voice message' : imageUrls.length ? 'Sent a photo' : ''),
+      body:
+        message.body ||
+        (audioUrl ? 'Sent a voice message' : imageUrls.length ? 'Sent a photo' : ''),
       url: `/app/chats/${conversation.id}`
     }).catch(() => undefined)
     return persisted

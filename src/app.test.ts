@@ -1,7 +1,7 @@
 import request from 'supertest'
 import { describe, expect, it, vi } from 'vitest'
 import { createApp } from './app.js'
-import { loadConfig, type AppConfig } from './config.js'
+import type { AppConfig } from './config.js'
 import { MemoryAuthRepository } from './infrastructure/MemoryAuthRepository.js'
 
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access -- Supertest exposes response bodies as any. */

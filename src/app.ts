@@ -388,7 +388,7 @@ export function createApp(
   })
   app.post('/api/conversations/:conversationId/messages', limiter, async (request, response) => {
     const current = await actor(request.header('authorization'))
-    const { body, image_urls, audio_url, client_id, reply_to_message_id } = z
+    const { body, image_urls, audio_url, client_id, reply_to_message_id, forwarded } = z
       .object({
         body: z.string().trim().max(4000).default(''),
         image_urls: z
@@ -401,7 +401,8 @@ export function createApp(
           .nullable()
           .optional(),
         client_id: z.string().uuid().optional(),
-        reply_to_message_id: z.string().uuid().nullable().optional()
+        reply_to_message_id: z.string().uuid().nullable().optional(),
+        forwarded: z.boolean().default(false)
       })
       .refine((value) => value.body.length > 0 || value.image_urls.length > 0 || value.audio_url, {
         message: 'Write a message or attach media.'
@@ -415,7 +416,8 @@ export function createApp(
       image_urls,
       audio_url ?? null,
       client_id,
-      reply_to_message_id ?? null
+      reply_to_message_id ?? null,
+      forwarded
     )
     const conversation = await repository.findConversation(conversationId)
     if (conversation) {
@@ -510,7 +512,7 @@ export function createApp(
 
   app.post('/api/media/audio', limiter, audioUpload.single('audio'), async (request, response) => {
     await actor(request.header('authorization'))
-    const file = request.file as Express.Multer.File | undefined
+    const file = request.file
     if (!file) throw new AuthError('Record audio first.', 422)
     const key = await mediaStorage.saveAudio(file)
     response.status(201).json({ data: { url: `/api/media/${key}` } })
