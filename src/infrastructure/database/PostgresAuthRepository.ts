@@ -70,6 +70,7 @@ interface MessageRow extends QueryResultRow {
   title: string
   image_urls: string[]
   audio_url: string | null
+  reactions: Record<string, string[]>
   reply_to_message_id: string | null
   reply_to_body: string | null
   reply_to_sender_id: string | null
@@ -508,6 +509,7 @@ export class PostgresAuthRepository
           title: row.title,
           imageUrls: row.image_urls,
           audioUrl: row.audio_url,
+          reactions: row.reactions ?? {},
           replyToMessageId: row.reply_to_message_id,
           replyToBody: row.reply_to_body,
           replyToSenderId: row.reply_to_sender_id
@@ -531,10 +533,27 @@ export class PostgresAuthRepository
       title: row.title,
       imageUrls: row.image_urls,
       audioUrl: row.audio_url,
+      reactions: row.reactions ?? {},
       replyToMessageId: row.reply_to_message_id,
       replyToBody: row.reply_to_body,
       replyToSenderId: row.reply_to_sender_id
     }))
+  }
+  async setMessageReaction(messageId: string, userId: string, emoji: string | null) {
+    const existing = await this.findMessage(messageId)
+    if (!existing) return null
+    const reactions = { ...(existing.reactions ?? {}) }
+    for (const [key, users] of Object.entries(reactions)) {
+      const next = users.filter((id) => id !== userId)
+      if (next.length) reactions[key] = next
+      else delete reactions[key]
+    }
+    if (emoji) reactions[emoji] = [...new Set([...(reactions[emoji] ?? []), userId])]
+    await this.pool.query('UPDATE messages SET reactions=$2 WHERE id=$1', [
+      messageId,
+      JSON.stringify(reactions)
+    ])
+    return this.findMessage(messageId)
   }
   async listConversations(userId: string) {
     const result = await this.pool.query<ConversationRow>(

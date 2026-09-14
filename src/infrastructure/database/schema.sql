@@ -144,6 +144,7 @@ ALTER TABLE messages ADD COLUMN IF NOT EXISTS broadcast_id uuid REFERENCES busin
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS title text NOT NULL DEFAULT '';
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS image_urls jsonb NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS audio_url text;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS reactions jsonb NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS delivered_at timestamptz;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_message_id uuid REFERENCES messages(id) ON DELETE SET NULL;
 ALTER TABLE messages ALTER COLUMN body SET DEFAULT '';

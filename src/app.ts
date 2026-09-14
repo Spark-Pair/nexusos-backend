@@ -435,6 +435,25 @@ export function createApp(
     }
     response.status(201).json({ data: message })
   })
+  app.put(
+    '/api/conversations/:conversationId/messages/:messageId/reaction',
+    limiter,
+    async (request, response) => {
+      const current = await actor(request.header('authorization'))
+      const conversationId = z.string().uuid().parse(request.params.conversationId)
+      const messageId = z.string().uuid().parse(request.params.messageId)
+      const emoji = z
+        .object({ emoji: z.enum(['👍', '❤️', '😂', '😮', '😢', '🙏']).nullable() })
+        .parse(request.body).emoji
+      const message = await messaging.react(current.id, conversationId, messageId, emoji)
+      const conversation = await repository.findConversation(conversationId)
+      if (conversation) {
+        publishRealtime(conversation.customerId, { conversationId, message })
+        publishRealtime(conversation.businessId, { conversationId, message })
+      }
+      response.json({ data: message })
+    }
+  )
   app.get('/api/broadcast-lists', async (request, response) => {
     const current = await actor(request.header('authorization'))
     if (current.account_kind !== 'business')

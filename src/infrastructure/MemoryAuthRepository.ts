@@ -261,6 +261,20 @@ export class MemoryAuthRepository
       )
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
   }
+  async setMessageReaction(messageId: string, userId: string, emoji: string | null) {
+    const message = this.messages.get(messageId)
+    if (!message) return null
+    const reactions = { ...(message.reactions ?? {}) }
+    for (const [key, users] of Object.entries(reactions)) {
+      const next = users.filter((id) => id !== userId)
+      if (next.length) reactions[key] = next
+      else delete reactions[key]
+    }
+    if (emoji) reactions[emoji] = [...new Set([...(reactions[emoji] ?? []), userId])]
+    const updated = { ...message, reactions }
+    this.messages.set(messageId, updated)
+    return updated
+  }
   async markMessagesRead(conversationId: string, readerId: string) {
     const readAt = new Date()
     for (const [id, message] of this.messages)

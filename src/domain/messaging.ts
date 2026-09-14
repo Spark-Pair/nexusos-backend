@@ -29,6 +29,7 @@ export interface Message {
   title?: string
   imageUrls?: string[]
   audioUrl?: string | null
+  reactions?: Record<string, string[]>
   replyToMessageId?: string | null
   replyToBody?: string | null
   replyToSenderId?: string | null
@@ -55,6 +56,7 @@ export interface MessagingRepository {
   createMessage(value: Message): Promise<void>
   findMessage(id: string): Promise<Message | null>
   listMessages(conversationId: string): Promise<Message[]>
+  setMessageReaction(messageId: string, userId: string, emoji: string | null): Promise<Message | null>
   listConversations(userId: string): Promise<Conversation[]>
   markMessagesDelivered(conversationId: string, recipientId: string): Promise<Date>
   markMessagesRead(conversationId: string, readerId: string): Promise<void>

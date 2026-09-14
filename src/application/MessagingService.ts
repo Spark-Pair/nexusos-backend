@@ -181,6 +181,15 @@ export class MessagingService {
     await this.repository.markMessagesRead(id, actorId)
     return { conversation, counterpart, messages: await this.repository.listMessages(id) }
   }
+  async react(actorId: string, conversationId: string, messageId: string, emoji: string | null) {
+    await this.requireParticipant(actorId, conversationId)
+    const message = await this.repository.findMessage(messageId)
+    if (!message || message.conversationId !== conversationId)
+      throw new AuthError('Message not found.', 404)
+    const updated = await this.repository.setMessageReaction(messageId, actorId, emoji)
+    if (!updated) throw new AuthError('Message not found.', 404)
+    return updated
+  }
   private async requireParticipant(actorId: string, id: string) {
     const conversation = await this.repository.findConversation(id)
     if (!conversation) throw new AuthError('Conversation not found.', 404)
