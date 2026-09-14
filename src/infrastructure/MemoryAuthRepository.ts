@@ -275,6 +275,27 @@ export class MemoryAuthRepository
     this.messages.set(messageId, updated)
     return updated
   }
+  async updateMessageBody(messageId: string, body: string, editedAt: Date) {
+    const message = this.messages.get(messageId)
+    if (!message || message.deletedAt) return null
+    const updated = { ...message, body, editedAt }
+    this.messages.set(messageId, updated)
+    return updated
+  }
+  async deleteMessageForEveryone(messageId: string, deletedAt: Date) {
+    const message = this.messages.get(messageId)
+    if (!message || message.deletedAt) return null
+    const updated = {
+      ...message,
+      body: '',
+      imageUrls: [],
+      audioUrl: null,
+      reactions: {},
+      deletedAt
+    }
+    this.messages.set(messageId, updated)
+    return updated
+  }
   async markMessagesRead(conversationId: string, readerId: string) {
     const readAt = new Date()
     for (const [id, message] of this.messages)

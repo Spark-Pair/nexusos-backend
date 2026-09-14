@@ -190,6 +190,31 @@ export class MessagingService {
     if (!updated) throw new AuthError('Message not found.', 404)
     return updated
   }
+  async edit(actorId: string, conversationId: string, messageId: string, body: string) {
+    await this.requireParticipant(actorId, conversationId)
+    const message = await this.repository.findMessage(messageId)
+    if (!message || message.conversationId !== conversationId)
+      throw new AuthError('Message not found.', 404)
+    if (message.senderId !== actorId) throw new AuthError('Only your messages can be edited.', 403)
+    if (message.broadcastId || message.deletedAt)
+      throw new AuthError('This message cannot be edited.', 409)
+    if (!message.body.trim() || message.imageUrls?.length || message.audioUrl)
+      throw new AuthError('Only text messages can be edited.', 409)
+    const updated = await this.repository.updateMessageBody(messageId, body.trim(), new Date())
+    if (!updated) throw new AuthError('Message not found.', 404)
+    return updated
+  }
+  async deleteForEveryone(actorId: string, conversationId: string, messageId: string) {
+    await this.requireParticipant(actorId, conversationId)
+    const message = await this.repository.findMessage(messageId)
+    if (!message || message.conversationId !== conversationId)
+      throw new AuthError('Message not found.', 404)
+    if (message.senderId !== actorId) throw new AuthError('Only your messages can be deleted.', 403)
+    if (message.broadcastId) throw new AuthError('Broadcast messages cannot be deleted here.', 409)
+    const updated = await this.repository.deleteMessageForEveryone(messageId, new Date())
+    if (!updated) throw new AuthError('Message not found.', 404)
+    return updated
+  }
   private async requireParticipant(actorId: string, id: string) {
     const conversation = await this.repository.findConversation(id)
     if (!conversation) throw new AuthError('Conversation not found.', 404)

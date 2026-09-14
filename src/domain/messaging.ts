@@ -25,6 +25,8 @@ export interface Message {
   createdAt: Date
   deliveredAt?: Date | null
   readAt: Date | null
+  editedAt?: Date | null
+  deletedAt?: Date | null
   broadcastId?: string | null
   title?: string
   imageUrls?: string[]
@@ -57,6 +59,8 @@ export interface MessagingRepository {
   findMessage(id: string): Promise<Message | null>
   listMessages(conversationId: string): Promise<Message[]>
   setMessageReaction(messageId: string, userId: string, emoji: string | null): Promise<Message | null>
+  updateMessageBody(messageId: string, body: string, editedAt: Date): Promise<Message | null>
+  deleteMessageForEveryone(messageId: string, deletedAt: Date): Promise<Message | null>
   listConversations(userId: string): Promise<Conversation[]>
   markMessagesDelivered(conversationId: string, recipientId: string): Promise<Date>
   markMessagesRead(conversationId: string, readerId: string): Promise<void>

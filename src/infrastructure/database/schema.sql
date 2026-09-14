@@ -146,6 +146,8 @@ ALTER TABLE messages ADD COLUMN IF NOT EXISTS image_urls jsonb NOT NULL DEFAULT 
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS audio_url text;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS reactions jsonb NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS delivered_at timestamptz;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS edited_at timestamptz;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_message_id uuid REFERENCES messages(id) ON DELETE SET NULL;
 ALTER TABLE messages ALTER COLUMN body SET DEFAULT '';
 ALTER TABLE messages DROP CONSTRAINT IF EXISTS messages_body_check;
@@ -158,7 +160,9 @@ BEGIN
     ALTER TABLE messages ADD CONSTRAINT messages_body_or_image_check
       CHECK (
         char_length(body) BETWEEN 0 AND 4000
-        AND (char_length(body) > 0 OR jsonb_array_length(image_urls) > 0 OR audio_url IS NOT NULL)
+        AND (
+          deleted_at IS NOT NULL OR char_length(body) > 0 OR jsonb_array_length(image_urls) > 0 OR audio_url IS NOT NULL
+        )
       );
   END IF;
 END

@@ -66,6 +66,8 @@ interface MessageRow extends QueryResultRow {
   created_at: Date
   delivered_at: Date | null
   read_at: Date | null
+  edited_at: Date | null
+  deleted_at: Date | null
   broadcast_id: string | null
   title: string
   image_urls: string[]
@@ -505,6 +507,8 @@ export class PostgresAuthRepository
           createdAt: row.created_at,
           deliveredAt: row.delivered_at,
           readAt: row.read_at,
+          editedAt: row.edited_at,
+          deletedAt: row.deleted_at,
           broadcastId: row.broadcast_id,
           title: row.title,
           imageUrls: row.image_urls,
@@ -529,6 +533,8 @@ export class PostgresAuthRepository
       createdAt: new Date(String(row.created_at)),
       deliveredAt: row.delivered_at,
       readAt: row.read_at,
+      editedAt: row.edited_at,
+      deletedAt: row.deleted_at,
       broadcastId: row.broadcast_id,
       title: row.title,
       imageUrls: row.image_urls,
@@ -553,6 +559,20 @@ export class PostgresAuthRepository
       messageId,
       JSON.stringify(reactions)
     ])
+    return this.findMessage(messageId)
+  }
+  async updateMessageBody(messageId: string, body: string, editedAt: Date) {
+    await this.pool.query(
+      'UPDATE messages SET body=$2,edited_at=$3 WHERE id=$1 AND deleted_at IS NULL',
+      [messageId, body, editedAt]
+    )
+    return this.findMessage(messageId)
+  }
+  async deleteMessageForEveryone(messageId: string, deletedAt: Date) {
+    await this.pool.query(
+      `UPDATE messages SET body='',image_urls='[]'::jsonb,audio_url=NULL,reactions='{}'::jsonb,deleted_at=$2 WHERE id=$1 AND deleted_at IS NULL`,
+      [messageId, deletedAt]
+    )
     return this.findMessage(messageId)
   }
   async listConversations(userId: string) {

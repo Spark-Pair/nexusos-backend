@@ -454,6 +454,39 @@ export function createApp(
       response.json({ data: message })
     }
   )
+  app.patch(
+    '/api/conversations/:conversationId/messages/:messageId',
+    limiter,
+    async (request, response) => {
+      const current = await actor(request.header('authorization'))
+      const conversationId = z.string().uuid().parse(request.params.conversationId)
+      const messageId = z.string().uuid().parse(request.params.messageId)
+      const body = z.object({ body: z.string().trim().min(1).max(4000) }).parse(request.body).body
+      const message = await messaging.edit(current.id, conversationId, messageId, body)
+      const conversation = await repository.findConversation(conversationId)
+      if (conversation) {
+        publishRealtime(conversation.customerId, { conversationId, message })
+        publishRealtime(conversation.businessId, { conversationId, message })
+      }
+      response.json({ data: message })
+    }
+  )
+  app.delete(
+    '/api/conversations/:conversationId/messages/:messageId',
+    limiter,
+    async (request, response) => {
+      const current = await actor(request.header('authorization'))
+      const conversationId = z.string().uuid().parse(request.params.conversationId)
+      const messageId = z.string().uuid().parse(request.params.messageId)
+      const message = await messaging.deleteForEveryone(current.id, conversationId, messageId)
+      const conversation = await repository.findConversation(conversationId)
+      if (conversation) {
+        publishRealtime(conversation.customerId, { conversationId, message })
+        publishRealtime(conversation.businessId, { conversationId, message })
+      }
+      response.json({ data: message })
+    }
+  )
   app.get('/api/broadcast-lists', async (request, response) => {
     const current = await actor(request.header('authorization'))
     if (current.account_kind !== 'business')
