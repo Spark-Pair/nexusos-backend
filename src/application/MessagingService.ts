@@ -88,7 +88,8 @@ export class MessagingService {
     id: string,
     body: string,
     imageUrls: string[] = [],
-    clientId: string = crypto.randomUUID()
+    clientId: string = crypto.randomUUID(),
+    replyToMessageId: string | null = null
   ) {
     const conversation = await this.requireParticipant(actorId, id)
     if (conversation.status !== 'accepted')
@@ -104,12 +105,18 @@ export class MessagingService {
         throw new AuthError('This message identifier has already been used.', 409)
       return previous
     }
+    if (replyToMessageId) {
+      const replyTo = await this.repository.findMessage(replyToMessageId)
+      if (!replyTo || replyTo.conversationId !== id)
+        throw new AuthError('Reply target was not found.', 404)
+    }
     const message = {
       id: clientId,
       conversationId: id,
       senderId: actorId,
       body: body.trim(),
       imageUrls,
+      replyToMessageId,
       createdAt: new Date(),
       deliveredAt: null,
       readAt: null

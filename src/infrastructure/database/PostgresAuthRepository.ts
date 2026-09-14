@@ -69,6 +69,9 @@ interface MessageRow extends QueryResultRow {
   broadcast_id: string | null
   title: string
   image_urls: string[]
+  reply_to_message_id: string | null
+  reply_to_body: string | null
+  reply_to_sender_id: string | null
 }
 
 const toBusinessRequest = (row: BusinessRequestRow): BusinessRequest => ({
@@ -470,7 +473,7 @@ export class PostgresAuthRepository
   }
   async createMessage(value: Message) {
     await this.pool.query(
-      'INSERT INTO messages(id,conversation_id,sender_id,body,created_at,read_at,delivered_at,image_urls) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(id) DO NOTHING',
+      'INSERT INTO messages(id,conversation_id,sender_id,body,created_at,read_at,delivered_at,image_urls,reply_to_message_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(id) DO NOTHING',
       [
         value.id,
         value.conversationId,
@@ -479,12 +482,16 @@ export class PostgresAuthRepository
         value.createdAt,
         value.readAt,
         value.deliveredAt ?? null,
-        JSON.stringify(value.imageUrls ?? [])
+        JSON.stringify(value.imageUrls ?? []),
+        value.replyToMessageId ?? null
       ]
     )
   }
   async findMessage(id: string): Promise<Message | null> {
-    const result = await this.pool.query<MessageRow>('SELECT * FROM messages WHERE id=$1', [id])
+    const result = await this.pool.query<MessageRow>(
+      'SELECT m.*,r.body reply_to_body,r.sender_id reply_to_sender_id FROM messages m LEFT JOIN messages r ON r.id=m.reply_to_message_id WHERE m.id=$1',
+      [id]
+    )
     const row = result.rows[0]
     return row
       ? {
@@ -497,13 +504,16 @@ export class PostgresAuthRepository
           readAt: row.read_at,
           broadcastId: row.broadcast_id,
           title: row.title,
-          imageUrls: row.image_urls
+          imageUrls: row.image_urls,
+          replyToMessageId: row.reply_to_message_id,
+          replyToBody: row.reply_to_body,
+          replyToSenderId: row.reply_to_sender_id
         }
       : null
   }
   async listMessages(conversationId: string) {
     const result = await this.pool.query<MessageRow>(
-      'SELECT m.* FROM messages m LEFT JOIN business_broadcasts b ON b.id=m.broadcast_id WHERE m.conversation_id=$1 AND (m.broadcast_id IS NULL OR b.suppressed_at IS NULL) ORDER BY m.created_at,m.id',
+      'SELECT m.*,r.body reply_to_body,r.sender_id reply_to_sender_id FROM messages m LEFT JOIN messages r ON r.id=m.reply_to_message_id LEFT JOIN business_broadcasts b ON b.id=m.broadcast_id WHERE m.conversation_id=$1 AND (m.broadcast_id IS NULL OR b.suppressed_at IS NULL) ORDER BY m.created_at,m.id',
       [conversationId]
     )
     return result.rows.map((row) => ({
@@ -516,7 +526,10 @@ export class PostgresAuthRepository
       readAt: row.read_at,
       broadcastId: row.broadcast_id,
       title: row.title,
-      imageUrls: row.image_urls
+      imageUrls: row.image_urls,
+      replyToMessageId: row.reply_to_message_id,
+      replyToBody: row.reply_to_body,
+      replyToSenderId: row.reply_to_sender_id
     }))
   }
   async listConversations(userId: string) {

@@ -382,21 +382,29 @@ export function createApp(
   })
   app.post('/api/conversations/:conversationId/messages', limiter, async (request, response) => {
     const current = await actor(request.header('authorization'))
-    const { body, image_urls, client_id } = z
+    const { body, image_urls, client_id, reply_to_message_id } = z
       .object({
         body: z.string().trim().max(4000).default(''),
         image_urls: z
           .array(z.string().regex(/^\/api\/media\/[a-z]+-[a-f0-9-]+\.(?:jpg|png|webp)$/u))
           .max(10)
           .default([]),
-        client_id: z.string().uuid().optional()
+        client_id: z.string().uuid().optional(),
+        reply_to_message_id: z.string().uuid().nullable().optional()
       })
       .refine((value) => value.body.length > 0 || value.image_urls.length > 0, {
         message: 'Write a message or attach an image.'
       })
       .parse(request.body)
     const conversationId = z.string().uuid().parse(request.params.conversationId)
-    const message = await messaging.send(current.id, conversationId, body, image_urls, client_id)
+    const message = await messaging.send(
+      current.id,
+      conversationId,
+      body,
+      image_urls,
+      client_id,
+      reply_to_message_id ?? null
+    )
     const conversation = await repository.findConversation(conversationId)
     if (conversation) {
       const recipientId =

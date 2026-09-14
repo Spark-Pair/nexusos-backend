@@ -28,6 +28,9 @@ export interface Message {
   broadcastId?: string | null
   title?: string
   imageUrls?: string[]
+  replyToMessageId?: string | null
+  replyToBody?: string | null
+  replyToSenderId?: string | null
 }
 export interface ConversationSummary extends Conversation {
   counterpart: DirectoryProfile
