@@ -162,6 +162,26 @@ Expected:
 
 ## Updating after a push
 
+Use this if the app is running in the same root PM2 list as the existing VPS apps:
+
+```bash
+cd /var/www/nexusos-backend
+git pull
+npm ci
+npm run build
+set -a
+source .env
+set +a
+npm run db:migrate
+npm prune --omit=dev
+pm2 restart nexusos-api --update-env
+pm2 save
+pm2 status
+curl https://api-nexusos.sparkpair.dev/api/health
+```
+
+Use this if the app is running under the dedicated `nexusos` system user:
+
 ```bash
 cd /var/www/nexusos-backend
 sudo -u nexusos git pull
@@ -169,6 +189,10 @@ sudo -u nexusos npm ci
 sudo -u nexusos npm run build
 sudo -u nexusos npm run db:migrate
 sudo -u nexusos npm prune --omit=dev
-pm2 restart nexusos-api
-pm2 status
+sudo -u nexusos pm2 restart nexusos-api --update-env
+sudo -u nexusos pm2 save
+sudo -u nexusos pm2 status
+curl https://api-nexusos.sparkpair.dev/api/health
 ```
+
+Always run `npm run db:migrate` after backend pulls because it safely applies additive schema changes such as message metadata, pinned chats, and business request status support.
