@@ -279,6 +279,19 @@ export class PostgresAuthRepository
     return result.rows.map(toBusinessRequest)
   }
 
+  async findLatestBusinessRequest(userId: string) {
+    const result = await this.pool.query<BusinessRequestRow>(
+      `SELECT r.id,r.user_id,r.business_name,r.contact_person_name,r.phone,r.status,r.created_at,r.reviewed_at,r.reviewed_by,
+       u.name user_name,u.email user_email
+       FROM business_requests r JOIN users u ON u.id=r.user_id
+       WHERE r.user_id=$1
+       ORDER BY r.created_at DESC
+       LIMIT 1`,
+      [userId]
+    )
+    return result.rows[0] ? toBusinessRequest(result.rows[0]) : null
+  }
+
   async resolveBusinessRequest(id: string, adminId: string, decision: 'approved' | 'rejected') {
     const client = await this.pool.connect()
     try {

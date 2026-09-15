@@ -147,6 +147,14 @@ export class MemoryAuthRepository
     })
   }
 
+  async findLatestBusinessRequest(userId: string) {
+    return (
+      [...this.businessRequests.values()]
+        .filter((request) => request.userId === userId)
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0] ?? null
+    )
+  }
+
   async resolveBusinessRequest(id: string, adminId: string, decision: 'approved' | 'rejected') {
     const request = this.businessRequests.get(id)
     if (!request || request.status !== 'pending') return null

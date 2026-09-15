@@ -62,6 +62,7 @@ export interface AuthRepository {
     phone: string
   }): Promise<BusinessRequest>
   listBusinessRequests(): Promise<BusinessRequest[]>
+  findLatestBusinessRequest(userId: string): Promise<BusinessRequest | null>
   resolveBusinessRequest(
     id: string,
     adminId: string,

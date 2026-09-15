@@ -219,7 +219,8 @@ export function createApp(
         email: user.email,
         phone: user.phone,
         account_kind: user.accountKind,
-        settings: await repository.getProfileSettings(user.id)
+        settings: await repository.getProfileSettings(user.id),
+        business_request: await repository.findLatestBusinessRequest(user.id)
       }
     })
   })
