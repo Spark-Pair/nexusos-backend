@@ -1,4 +1,5 @@
 import request from 'supertest'
+import jwt from 'jsonwebtoken'
 import { describe, expect, it, vi } from 'vitest'
 import { createApp } from './app.js'
 import type { AppConfig } from './config.js'
@@ -58,6 +59,7 @@ describe('NexusOS Express authentication API', () => {
       .expect(201)
     expect(registered.body.requires_phone).toBe(false)
     expect(registered.body.token).toEqual(expect.any(String))
+    expect(jwt.decode(String(registered.body.token))).not.toHaveProperty('exp')
     await request(app)
       .post('/api/auth/login')
       .send({ email: 'hasan@example.test', password: 'Secure123', device_name: 'Android' })

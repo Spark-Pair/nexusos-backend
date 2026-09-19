@@ -102,7 +102,6 @@ export class AuthService {
     return {
       data: this.publicUser(user),
       token: jwt.sign({ sub: user.id, kind: user.accountKind }, this.config.JWT_SECRET, {
-        expiresIn: '15m',
         issuer: this.config.JWT_ISSUER
       }),
       requires_phone: false
