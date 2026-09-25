@@ -473,6 +473,115 @@ describe('NexusOS Express authentication API', () => {
     expect(savedUpdates.body.data[0]).toMatchObject({ saved: true })
   })
 
+  it('connects customers through reusable business invite links idempotently', async () => {
+    const app = setup()
+    const register = (name: string, email: string, kind: 'customer' | 'business') =>
+      request(app).post('/api/auth/register').send({
+        name,
+        email,
+        password: 'Secure123',
+        password_confirmation: 'Secure123',
+        account_kind: kind,
+        device_name: 'web test'
+      })
+    const admin = await register('Admin Fixture', 'admin@example.test', 'customer').expect(201)
+    const customer = await register(
+      'Invite Customer',
+      'invite-customer@example.test',
+      'customer'
+    ).expect(201)
+    await request(app)
+      .post('/api/admin/users')
+      .set('Authorization', `Bearer ${String(admin.body.token)}`)
+      .send({
+        name: 'Invite Studio',
+        email: 'invite-studio@example.test',
+        password: 'Secure123',
+        account_kind: 'business',
+        device_name: 'admin panel'
+      })
+      .expect(201)
+    const business = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: 'invite-studio@example.test',
+        password: 'Secure123',
+        device_name: 'web test'
+      })
+      .expect(200)
+    const businessToken = String(business.body.token)
+    const customerToken = String(customer.body.token)
+    const invite = await request(app)
+      .get('/api/business/invite')
+      .set('Authorization', `Bearer ${businessToken}`)
+      .expect(200)
+    const inviteUrl = new URL(String(invite.body.data.inviteUrl))
+    const token = inviteUrl.pathname.split('/').at(-1)
+    expect(token).toEqual(expect.any(String))
+    expect(token).not.toBe(String(business.body.data.id))
+
+    await request(app).get(`/api/invites/${token}`).expect(200)
+    await request(app)
+      .get('/api/business/customers')
+      .set('Authorization', `Bearer ${businessToken}`)
+      .expect(200)
+      .expect((response) => expect(response.body.data).toHaveLength(0))
+    await request(app).post(`/api/invites/${token}/connect`).expect(401)
+
+    const connected = await request(app)
+      .post(`/api/invites/${token}/connect`)
+      .set('Authorization', `Bearer ${customerToken}`)
+      .expect(200)
+    expect(connected.body).toMatchObject({
+      success: true,
+      alreadyConnected: false,
+      business: { name: 'Invite Studio' },
+      connection: { status: 'accepted' }
+    })
+    const repeated = await request(app)
+      .post(`/api/invites/${token}/connect`)
+      .set('Authorization', `Bearer ${customerToken}`)
+      .expect(200)
+    expect(repeated.body).toMatchObject({
+      success: true,
+      alreadyConnected: true,
+      connection: { id: connected.body.connection.id }
+    })
+    await request(app)
+      .get('/api/business/customers')
+      .set('Authorization', `Bearer ${businessToken}`)
+      .expect(200)
+      .expect((response) => expect(response.body.data).toHaveLength(1))
+
+    const list = await request(app)
+      .post('/api/broadcast-lists')
+      .set('Authorization', `Bearer ${businessToken}`)
+      .send({ name: 'Invite customers', customer_ids: [String(customer.body.data.id)] })
+      .expect(201)
+    await request(app)
+      .post('/api/broadcasts')
+      .set('Authorization', `Bearer ${businessToken}`)
+      .send({ list_id: list.body.data.id, title: 'Hello', body: 'Welcome.', image_urls: [] })
+      .expect(201)
+    await request(app)
+      .get('/api/broadcasts')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .expect(200)
+      .expect((response) => expect(response.body.data[0].title).toBe('Hello'))
+
+    const regenerated = await request(app)
+      .post('/api/business/invite')
+      .set('Authorization', `Bearer ${businessToken}`)
+      .expect(201)
+    expect(regenerated.body.data.inviteUrl).not.toBe(invite.body.data.inviteUrl)
+    await request(app).get(`/api/invites/${token}`).expect(410)
+    await request(app)
+      .get('/api/business/customers')
+      .set('Authorization', `Bearer ${businessToken}`)
+      .expect(200)
+      .expect((response) => expect(response.body.data).toHaveLength(1))
+  })
+
   it('restricts user administration and invalidates deactivated user sessions', async () => {
     const app = setup()
     const payload = (name: string, email: string) => ({
