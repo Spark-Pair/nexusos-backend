@@ -547,6 +547,22 @@ describe('NexusOS Express authentication API', () => {
       alreadyConnected: true,
       connection: { id: connected.body.connection.id }
     })
+    const customerInbox = await request(app)
+      .get('/api/conversations')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .expect(200)
+    expect(customerInbox.body.data[0]).toMatchObject({
+      id: connected.body.connection.id,
+      lastMessage: {
+        senderId: String(business.body.data.id),
+        body: 'Welcome! You are now connected with Invite Studio on NexusOS.'
+      }
+    })
+    const customerChat = await request(app)
+      .get(`/api/conversations/${String(connected.body.connection.id)}`)
+      .set('Authorization', `Bearer ${customerToken}`)
+      .expect(200)
+    expect(customerChat.body.data.messages).toHaveLength(1)
     await request(app)
       .get('/api/business/customers')
       .set('Authorization', `Bearer ${businessToken}`)

@@ -99,6 +99,17 @@ export class BusinessInviteService {
       businessId: invite.businessId,
       connectedAt: new Date()
     })
+    if (!result.alreadyConnected) {
+      await this.repository.createMessage({
+        id: crypto.randomUUID(),
+        conversationId: result.conversation.id,
+        senderId: invite.businessId,
+        body: `Welcome! You are now connected with ${publicInvite.business.name} on NexusOS.`,
+        createdAt: result.conversation.updatedAt,
+        deliveredAt: null,
+        readAt: null
+      })
+    }
     return { invite: publicInvite, ...result }
   }
 }
