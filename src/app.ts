@@ -8,6 +8,7 @@ import { resolve } from 'node:path'
 import { OAuth2Client } from 'google-auth-library'
 import { z } from 'zod'
 import { AuthError, AuthService } from './application/AuthService.js'
+import { BusinessInviteService } from './application/BusinessInviteService.js'
 import { MessagingService } from './application/MessagingService.js'
 import { PushNotificationService } from './application/PushNotificationService.js'
 import type { AppConfig } from './config.js'
@@ -102,6 +103,7 @@ export function createApp(
       done(null, ['audio/webm', 'audio/mpeg'].includes(file.mimetype))
   })
   const auth = new AuthService(repository, config)
+  const businessInvites = new BusinessInviteService(repository, config.FRONTEND_URL)
   const push = new PushNotificationService(repository, config)
   const messaging = new MessagingService(repository, async (userId, payload) => {
     publishRealtime(userId, {
@@ -171,6 +173,11 @@ export function createApp(
   app.get('/api/push/public-key', (_request, response) =>
     response.json({ public_key: config.VAPID_PUBLIC_KEY ?? null })
   )
+  const inviteToken = z
+    .string()
+    .min(20)
+    .max(200)
+    .regex(/^[A-Za-z0-9_-]+$/u)
   const bearerToken = (header: string | undefined) => {
     const match = /^Bearer\s+(.+)$/iu.exec(header ?? '')
     if (!match?.[1]) throw new AuthError('Authentication is required.', 401)
@@ -321,6 +328,38 @@ export function createApp(
     const current = await actor(request.header('authorization'))
     const query = z.string().max(80).catch('').parse(request.query.q)
     response.json({ data: await messaging.search(current.id, current.account_kind, query) })
+  })
+  app.get('/api/invites/:token', limiter, async (request, response) => {
+    const token = inviteToken.parse(request.params.token)
+    response.json({ data: await businessInvites.resolve(token) })
+  })
+  app.post('/api/invites/:token/connect', limiter, async (request, response) => {
+    const current = await actor(request.header('authorization'))
+    const token = inviteToken.parse(request.params.token)
+    const result = await businessInvites.connect(token, current.id, current.account_kind)
+    publishRealtime(result.conversation.customerId, { conversationId: result.conversation.id })
+    publishRealtime(result.conversation.businessId, { conversationId: result.conversation.id })
+    response.json({
+      success: true,
+      alreadyConnected: result.alreadyConnected,
+      business: result.invite.business,
+      connection: result.conversation
+    })
+  })
+  app.get('/api/business/invite', async (request, response) => {
+    const current = await actor(request.header('authorization'))
+    const result = await businessInvites.getBusinessInvite(current.id, current.account_kind)
+    response.json({ data: { inviteUrl: result.inviteUrl } })
+  })
+  app.post('/api/business/invite', limiter, async (request, response) => {
+    const current = await actor(request.header('authorization'))
+    const result = await businessInvites.createBusinessInvite(current.id, current.account_kind)
+    response.status(201).json({ data: { inviteUrl: result.inviteUrl } })
+  })
+  app.delete('/api/business/invite', limiter, async (request, response) => {
+    const current = await actor(request.header('authorization'))
+    await businessInvites.revokeBusinessInvite(current.id, current.account_kind)
+    response.status(204).send()
   })
   app.put('/api/businesses/:businessId/follow', async (request, response) => {
     const current = await actor(request.header('authorization'))
