@@ -5,7 +5,12 @@ import type {
   PushSubscriptionRecord,
   User
 } from '../domain/auth.js'
-import type { Conversation, Message, MessagingRepository } from '../domain/messaging.js'
+import type {
+  BusinessInvite,
+  Conversation,
+  Message,
+  MessagingRepository
+} from '../domain/messaging.js'
 import type {
   BroadcastDraft,
   BroadcastList,
@@ -20,6 +25,7 @@ export class MemoryAuthRepository
   private readonly users = new Map<string, User>()
   private readonly follows = new Set<string>()
   private readonly conversations = new Map<string, Conversation>()
+  private readonly businessInvites = new Map<string, BusinessInvite>()
   private readonly messages = new Map<string, Message>()
   private readonly conversationStates = new Map<
     string,
@@ -356,6 +362,72 @@ export class MemoryAuthRepository
       ...(await this.getConversationState(userId, conversationId)),
       ...state
     })
+  }
+  async findReusableBusinessInvite(businessId: string) {
+    const now = new Date()
+    return (
+      [...this.businessInvites.values()]
+        .filter(
+          (invite) =>
+            invite.businessId === businessId &&
+            invite.type === 'customer_connect' &&
+            invite.isActive &&
+            !invite.revokedAt &&
+            (!invite.expiresAt || invite.expiresAt > now)
+        )
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0] ?? null
+    )
+  }
+  async createBusinessInvite(value: BusinessInvite) {
+    this.businessInvites.set(value.id, value)
+  }
+  async revokeBusinessInvites(businessId: string, revokedAt: Date) {
+    for (const [id, invite] of this.businessInvites)
+      if (
+        invite.businessId === businessId &&
+        invite.type === 'customer_connect' &&
+        invite.isActive &&
+        !invite.revokedAt
+      )
+        this.businessInvites.set(id, {
+          ...invite,
+          isActive: false,
+          revokedAt,
+          updatedAt: revokedAt
+        })
+  }
+  async findBusinessInviteByTokenHash(tokenHash: string) {
+    return (
+      [...this.businessInvites.values()].find((invite) => invite.tokenHash === tokenHash) ?? null
+    )
+  }
+  async connectBusinessInvite(input: {
+    inviteId: string
+    customerId: string
+    businessId: string
+    connectedAt: Date
+  }) {
+    const existing = await this.findConversationBetween(input.customerId, input.businessId)
+    if (existing) {
+      const conversation = {
+        ...existing,
+        status: 'accepted' as const,
+        updatedAt: input.connectedAt
+      }
+      this.conversations.set(conversation.id, conversation)
+      return { conversation, alreadyConnected: existing.status === 'accepted' }
+    }
+    const conversation: Conversation = {
+      id: crypto.randomUUID(),
+      customerId: input.customerId,
+      businessId: input.businessId,
+      invitedBy: input.businessId,
+      status: 'accepted',
+      createdAt: input.connectedAt,
+      updatedAt: input.connectedAt
+    }
+    this.conversations.set(conversation.id, conversation)
+    return { conversation, alreadyConnected: false }
   }
   async listBroadcastLists(businessId: string) {
     return [...this.broadcastLists.values()].filter((x) => x.businessId === businessId)

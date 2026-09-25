@@ -66,6 +66,22 @@ CREATE TABLE IF NOT EXISTS conversations (
 );
 CREATE INDEX IF NOT EXISTS conversations_customer_idx ON conversations(customer_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS conversations_business_idx ON conversations(business_id, updated_at DESC);
+CREATE TABLE IF NOT EXISTS business_invites (
+  id uuid PRIMARY KEY,
+  business_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token text NOT NULL UNIQUE,
+  token_hash varchar(64) NOT NULL UNIQUE,
+  type varchar(40) NOT NULL DEFAULT 'customer_connect' CHECK (type IN ('customer_connect')),
+  is_active boolean NOT NULL DEFAULT true,
+  expires_at timestamptz,
+  revoked_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS business_invites_one_active_customer_connect
+  ON business_invites(business_id,type) WHERE is_active=true AND revoked_at IS NULL;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS source varchar(40);
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS invite_id uuid REFERENCES business_invites(id) ON DELETE SET NULL;
 CREATE TABLE IF NOT EXISTS conversation_user_states (
  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
  conversation_id uuid NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,

@@ -6,7 +6,12 @@ import type {
   PushSubscriptionRecord,
   User
 } from '../../domain/auth.js'
-import type { Conversation, Message, MessagingRepository } from '../../domain/messaging.js'
+import type {
+  BusinessInvite,
+  Conversation,
+  Message,
+  MessagingRepository
+} from '../../domain/messaging.js'
 import type {
   BroadcastDraft,
   BroadcastList,
@@ -57,6 +62,19 @@ interface ConversationRow extends QueryResultRow {
   status: Conversation['status']
   created_at: Date
   updated_at: Date
+  inserted?: boolean
+}
+interface BusinessInviteRow extends QueryResultRow {
+  id: string
+  business_id: string
+  token: string
+  token_hash: string
+  type: BusinessInvite['type']
+  is_active: boolean
+  created_at: Date
+  updated_at: Date
+  expires_at: Date | null
+  revoked_at: Date | null
 }
 interface MessageRow extends QueryResultRow {
   id: string
@@ -111,6 +129,19 @@ const toUser = (row: UserRow): User => ({
   isActive: row.is_active,
   createdAt: row.created_at,
   deletedAt: row.deleted_at
+})
+
+const toBusinessInvite = (row: BusinessInviteRow): BusinessInvite => ({
+  id: row.id,
+  businessId: row.business_id,
+  token: row.token,
+  tokenHash: row.token_hash,
+  type: row.type,
+  isActive: row.is_active,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+  expiresAt: row.expires_at,
+  revokedAt: row.revoked_at
 })
 
 export class PostgresAuthRepository
@@ -645,6 +676,65 @@ export class PostgresAuthRepository
         state.pinned ?? current.pinned
       ]
     )
+  }
+  async findReusableBusinessInvite(businessId: string) {
+    const result = await this.pool.query<BusinessInviteRow>(
+      `SELECT * FROM business_invites
+       WHERE business_id=$1 AND type='customer_connect' AND is_active=true AND revoked_at IS NULL
+       AND (expires_at IS NULL OR expires_at>now())
+       ORDER BY created_at DESC LIMIT 1`,
+      [businessId]
+    )
+    return result.rows[0] ? toBusinessInvite(result.rows[0]) : null
+  }
+  async createBusinessInvite(value: BusinessInvite) {
+    await this.pool.query(
+      `INSERT INTO business_invites(id,business_id,token,token_hash,type,is_active,created_at,updated_at,expires_at,revoked_at)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [
+        value.id,
+        value.businessId,
+        value.token,
+        value.tokenHash,
+        value.type,
+        value.isActive,
+        value.createdAt,
+        value.updatedAt,
+        value.expiresAt,
+        value.revokedAt
+      ]
+    )
+  }
+  async revokeBusinessInvites(businessId: string, revokedAt: Date) {
+    await this.pool.query(
+      `UPDATE business_invites SET is_active=false,revoked_at=$2,updated_at=$2
+       WHERE business_id=$1 AND type='customer_connect' AND is_active=true AND revoked_at IS NULL`,
+      [businessId, revokedAt]
+    )
+  }
+  async findBusinessInviteByTokenHash(tokenHash: string) {
+    const result = await this.pool.query<BusinessInviteRow>(
+      'SELECT * FROM business_invites WHERE token_hash=$1',
+      [tokenHash]
+    )
+    return result.rows[0] ? toBusinessInvite(result.rows[0]) : null
+  }
+  async connectBusinessInvite(input: {
+    inviteId: string
+    customerId: string
+    businessId: string
+    connectedAt: Date
+  }) {
+    const result = await this.pool.query<ConversationRow>(
+      `INSERT INTO conversations(id,customer_id,business_id,invited_by,status,created_at,updated_at,source,invite_id)
+       VALUES($1,$2,$3,$3,'accepted',$4,$4,'invite_link',$5)
+       ON CONFLICT(customer_id,business_id) DO UPDATE
+       SET status='accepted',updated_at=now(),source=COALESCE(conversations.source,'invite_link'),invite_id=COALESCE(conversations.invite_id,$5)
+       RETURNING *, (xmax = 0) AS inserted`,
+      [crypto.randomUUID(), input.customerId, input.businessId, input.connectedAt, input.inviteId]
+    )
+    const row = result.rows[0]!
+    return { conversation: this.toConversation(row), alreadyConnected: !row.inserted }
   }
   async listBroadcastLists(businessId: string) {
     const result = await this.pool.query(

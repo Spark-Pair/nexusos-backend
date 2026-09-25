@@ -45,6 +45,27 @@ export interface ConversationSummary extends Conversation {
   muted: boolean
   pinned: boolean
 }
+export interface BusinessInvite {
+  id: string
+  businessId: string
+  token: string
+  tokenHash: string
+  type: 'customer_connect'
+  isActive: boolean
+  createdAt: Date
+  updatedAt: Date
+  expiresAt: Date | null
+  revokedAt: Date | null
+}
+export interface PublicBusinessInvite {
+  id: string
+  business: DirectoryProfile
+}
+export interface InviteConnectionResult {
+  invite: PublicBusinessInvite
+  conversation: Conversation
+  alreadyConnected: boolean
+}
 export interface MessagingRepository {
   searchProfiles(
     actorId: string,
@@ -85,4 +106,14 @@ export interface MessagingRepository {
       pinned?: boolean | undefined
     }
   ): Promise<void>
+  findReusableBusinessInvite(businessId: string): Promise<BusinessInvite | null>
+  createBusinessInvite(value: BusinessInvite): Promise<void>
+  revokeBusinessInvites(businessId: string, revokedAt: Date): Promise<void>
+  findBusinessInviteByTokenHash(tokenHash: string): Promise<BusinessInvite | null>
+  connectBusinessInvite(input: {
+    inviteId: string
+    customerId: string
+    businessId: string
+    connectedAt: Date
+  }): Promise<{ conversation: Conversation; alreadyConnected: boolean }>
 }
