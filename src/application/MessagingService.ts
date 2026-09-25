@@ -152,13 +152,13 @@ export class MessagingService {
   }
   async list(actorId: string) {
     const conversations = await this.repository.listConversations(actorId)
-    return Promise.all(
+    const results = await Promise.all(
       conversations.map(async (conversation) => {
         const counterpartId =
           conversation.customerId === actorId ? conversation.businessId : conversation.customerId
         const counterpart = await this.repository.findProfile(counterpartId)
         const messages = await this.repository.listMessages(conversation.id)
-        if (!counterpart) throw new AuthError('Conversation participant not found.', 500)
+        if (!counterpart) return null
         return {
           ...conversation,
           counterpart,
@@ -168,6 +168,7 @@ export class MessagingService {
         }
       })
     )
+    return results.filter((conversation): conversation is NonNullable<typeof conversation> => Boolean(conversation))
   }
   async setState(
     actorId: string,
