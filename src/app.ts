@@ -296,7 +296,8 @@ export function createApp(
       .object({
         id_token: z.string().min(1),
         account_kind: accountKind,
-        device_name: z.string()
+        device_name: z.string(),
+        pending_invite_token: inviteToken.optional()
       })
       .parse(request.body)
     if (data.account_kind !== 'customer')
@@ -315,14 +316,31 @@ export function createApp(
       throw new AuthError('Invalid Google token.', 401)
     }
     if (!profile.emailVerified) throw new AuthError('Google email is not verified.', 401)
-    response.json(
-      await auth.google({
-        googleId: profile.sub,
-        email: profile.email,
-        name: profile.name,
-        accountKind: data.account_kind
-      })
+    const session = await auth.google({
+      googleId: profile.sub,
+      email: profile.email,
+      name: profile.name,
+      accountKind: data.account_kind
+    })
+    if (!data.pending_invite_token) {
+      response.json(session)
+      return
+    }
+    const result = await businessInvites.connect(
+      data.pending_invite_token,
+      session.data.id,
+      session.data.account_kind
     )
+    publishRealtime(result.conversation.customerId, { conversationId: result.conversation.id })
+    publishRealtime(result.conversation.businessId, { conversationId: result.conversation.id })
+    response.json({
+      ...session,
+      invite_connection: {
+        alreadyConnected: result.alreadyConnected,
+        business: result.invite.business,
+        connection: result.conversation
+      }
+    })
   })
   app.get('/api/directory', async (request, response) => {
     const current = await actor(request.header('authorization'))

@@ -162,6 +162,69 @@ describe('NexusOS Express authentication API', () => {
     expect(response.body.requires_phone).toBe(false)
   })
 
+  it('accepts a pending business invite during Google sign-in', async () => {
+    const repository = new MemoryAuthRepository()
+    const google = googleDependencies()
+    const app = createApp(googleConfig, repository, google.dependencies)
+    const admin = await request(app)
+      .post('/api/auth/register')
+      .send({
+        name: 'Admin User',
+        email: 'admin@example.test',
+        password: 'Secure123',
+        password_confirmation: 'Secure123',
+        account_kind: 'customer',
+        device_name: 'web test'
+      })
+      .expect(201)
+    const createdBusiness = await request(app)
+      .post('/api/admin/users')
+      .set('Authorization', `Bearer ${String(admin.body.token)}`)
+      .send({
+        name: 'Google Invite Studio',
+        email: 'google-invite-studio@example.test',
+        password: 'Secure123',
+        account_kind: 'business',
+        device_name: 'admin panel'
+      })
+      .expect(201)
+    const business = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: 'google-invite-studio@example.test',
+        password: 'Secure123',
+        device_name: 'web test'
+      })
+      .expect(200)
+    const invite = await request(app)
+      .get('/api/business/invite')
+      .set('Authorization', `Bearer ${String(business.body.token)}`)
+      .expect(200)
+    const token = new URL(String(invite.body.data.inviteUrl)).pathname.split('/').at(-1)
+    const signedIn = await request(app)
+      .post('/api/auth/google/exchange')
+      .send({ ...googlePayload(google.idToken), pending_invite_token: token })
+      .expect(200)
+
+    expect(signedIn.body.invite_connection).toMatchObject({
+      alreadyConnected: false,
+      business: { id: createdBusiness.body.data.id, name: 'Google Invite Studio' },
+      connection: { status: 'accepted' }
+    })
+    await request(app)
+      .get('/api/conversations')
+      .set('Authorization', `Bearer ${String(signedIn.body.token)}`)
+      .expect(200)
+      .expect((response) =>
+        expect(response.body.data[0]).toMatchObject({
+          id: signedIn.body.invite_connection.connection.id,
+          lastMessage: {
+            body: 'Welcome! You are now connected with Google Invite Studio on NexusOS.'
+          }
+        })
+      )
+  })
+
   it('restores authenticated identity and rejects invalid sessions', async () => {
     const app = setup()
     const registered = await request(app)
