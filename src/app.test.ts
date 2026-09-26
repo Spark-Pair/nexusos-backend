@@ -417,6 +417,19 @@ describe('NexusOS Express authentication API', () => {
       .set('Authorization', `Bearer ${customerToken}`)
       .send({ body: 'Thanks, connected!' })
       .expect(201)
+    const businessSearch = await request(app)
+      .get('/api/conversations/search?q=connected')
+      .set('Authorization', `Bearer ${businessToken}`)
+      .expect(200)
+    expect(businessSearch.body.data[0]).toMatchObject({
+      conversationId,
+      body: 'Thanks, connected!'
+    })
+    const outsiderSearch = await request(app)
+      .get('/api/conversations/search?q=connected')
+      .set('Authorization', `Bearer ${outsiderToken}`)
+      .expect(200)
+    expect(outsiderSearch.body.data).toEqual([])
     const unreadList = await request(app)
       .get('/api/conversations')
       .set('Authorization', `Bearer ${businessToken}`)
@@ -719,5 +732,48 @@ describe('NexusOS Express authentication API', () => {
       .delete(`/api/admin/users/${String(admin.body.data.id as unknown)}`)
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(409)
+  })
+
+  it('saves timezone-aware quiet hours in profile settings', async () => {
+    const app = setup()
+    const registered = await request(app)
+      .post('/api/auth/register')
+      .send({
+        name: 'Quiet User',
+        email: 'quiet@example.test',
+        password: 'Secure123',
+        password_confirmation: 'Secure123',
+        account_kind: 'customer',
+        device_name: 'web test'
+      })
+      .expect(201)
+    const token = String(registered.body.token)
+    await request(app)
+      .patch('/api/profile')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: 'Quiet User',
+        username: registered.body.data.username,
+        bio: '',
+        language: 'en',
+        show_last_seen: true,
+        allow_read_receipts: true,
+        allow_broadcasts: true,
+        quiet_hours_enabled: true,
+        quiet_hours_start: '23:00',
+        quiet_hours_end: '07:30',
+        time_zone: 'Asia/Karachi'
+      })
+      .expect(200)
+    const profile = await request(app)
+      .get('/api/profile')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200)
+    expect(profile.body.data.settings).toMatchObject({
+      quietHoursEnabled: true,
+      quietHoursStart: '23:00',
+      quietHoursEnd: '07:30',
+      timeZone: 'Asia/Karachi'
+    })
   })
 })

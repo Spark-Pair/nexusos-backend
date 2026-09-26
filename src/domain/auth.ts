@@ -82,6 +82,10 @@ export interface ProfileSettings {
   showLastSeen: boolean
   allowReadReceipts: boolean
   allowBroadcasts: boolean
+  quietHoursEnabled: boolean
+  quietHoursStart: string
+  quietHoursEnd: string
+  timeZone: string
   updatedAt: Date
 }
 

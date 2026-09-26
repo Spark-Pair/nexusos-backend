@@ -1,6 +1,7 @@
 import { createServer } from 'node:http'
 import pg from 'pg'
 import { createApp } from './app.js'
+import { PushNotificationService } from './application/PushNotificationService.js'
 import { loadConfig } from './config.js'
 import { PostgresAuthRepository } from './infrastructure/database/PostgresAuthRepository.js'
 import { createRealtimeGateway, type RealtimePayload } from './infrastructure/RealtimeGateway.js'
@@ -8,6 +9,7 @@ import { createRealtimeGateway, type RealtimePayload } from './infrastructure/Re
 const config = loadConfig()
 const pool = new pg.Pool({ connectionString: config.DATABASE_URL })
 const repository = new PostgresAuthRepository(pool)
+const push = new PushNotificationService(repository, config)
 let publishRealtime: (userId: string, payload: RealtimePayload) => boolean = () => false
 const app = createApp(config, repository, undefined, (userId, payload) =>
   publishRealtime(userId, payload)
@@ -27,13 +29,28 @@ const runScheduledBroadcasts = async () => {
     for (const broadcast of due) {
       const conversations = await repository.listBroadcastConversations(broadcast.id)
       for (const conversation of conversations) {
+        const state = await repository.getConversationState(
+          conversation.customerId,
+          conversation.id
+        )
+        const allowed = !state.muted && (await push.isAllowed(conversation.customerId))
         publishRealtime(conversation.customerId, {
           conversationId: conversation.id,
-          title: 'Broadcast: ' + broadcast.title,
-          body: broadcast.body,
-          url: `/app/chats/${conversation.id}`
+          ...(allowed
+            ? {
+                title: 'Broadcast: ' + broadcast.title,
+                body: broadcast.body,
+                url: `/app/chats/${conversation.id}`
+              }
+            : {})
         })
         publishRealtime(conversation.businessId, { conversationId: conversation.id })
+        if (allowed)
+          await push.send(conversation.customerId, {
+            title: 'Broadcast: ' + broadcast.title,
+            body: broadcast.body,
+            url: `/app/chats/${conversation.id}`
+          })
       }
     }
   } catch (error) {

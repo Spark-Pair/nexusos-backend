@@ -395,7 +395,9 @@ export class PostgresAuthRepository
   async getProfileSettings(userId: string): Promise<ProfileSettings> {
     const result = await this.pool.query(
       `INSERT INTO profile_settings(user_id) VALUES($1) ON CONFLICT(user_id) DO UPDATE SET user_id=EXCLUDED.user_id
-       RETURNING user_id,bio,language,show_last_seen,allow_read_receipts,allow_broadcasts,updated_at`,
+       RETURNING user_id,bio,language,show_last_seen,allow_read_receipts,allow_broadcasts,
+       quiet_hours_enabled,to_char(quiet_hours_start,'HH24:MI') quiet_hours_start,
+       to_char(quiet_hours_end,'HH24:MI') quiet_hours_end,time_zone,updated_at`,
       [userId]
     )
     const row = result.rows[0] as Record<string, unknown>
@@ -406,13 +408,17 @@ export class PostgresAuthRepository
       showLastSeen: Boolean(row.show_last_seen),
       allowReadReceipts: Boolean(row.allow_read_receipts),
       allowBroadcasts: Boolean(row.allow_broadcasts),
+      quietHoursEnabled: Boolean(row.quiet_hours_enabled),
+      quietHoursStart: String(row.quiet_hours_start),
+      quietHoursEnd: String(row.quiet_hours_end),
+      timeZone: String(row.time_zone),
       updatedAt: new Date(String(row.updated_at))
     }
   }
   async updateProfileSettings(value: ProfileSettings) {
     await this.pool.query(
-      `INSERT INTO profile_settings(user_id,bio,language,show_last_seen,allow_read_receipts,allow_broadcasts,updated_at)
-       VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(user_id) DO UPDATE SET bio=$2,language=$3,show_last_seen=$4,allow_read_receipts=$5,allow_broadcasts=$6,updated_at=$7`,
+      `INSERT INTO profile_settings(user_id,bio,language,show_last_seen,allow_read_receipts,allow_broadcasts,quiet_hours_enabled,quiet_hours_start,quiet_hours_end,time_zone,updated_at)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT(user_id) DO UPDATE SET bio=$2,language=$3,show_last_seen=$4,allow_read_receipts=$5,allow_broadcasts=$6,quiet_hours_enabled=$7,quiet_hours_start=$8,quiet_hours_end=$9,time_zone=$10,updated_at=$11`,
       [
         value.userId,
         value.bio,
@@ -420,6 +426,10 @@ export class PostgresAuthRepository
         value.showLastSeen,
         value.allowReadReceipts,
         value.allowBroadcasts,
+        value.quietHoursEnabled,
+        value.quietHoursStart,
+        value.quietHoursEnd,
+        value.timeZone,
         value.updatedAt
       ]
     )
@@ -591,6 +601,36 @@ export class PostgresAuthRepository
       replyToMessageId: row.reply_to_message_id,
       replyToBody: row.reply_to_body,
       replyToSenderId: row.reply_to_sender_id
+    }))
+  }
+  async searchMessages(userId: string, query: string) {
+    const result = await this.pool.query<
+      {
+        conversation_id: string
+        message_id: string
+        body: string
+        title: string | null
+        created_at: Date
+      } & QueryResultRow
+    >(
+      `SELECT m.conversation_id,m.id message_id,m.body,m.title,m.created_at
+       FROM messages m
+       JOIN conversations c ON c.id=m.conversation_id
+       LEFT JOIN business_broadcasts b ON b.id=m.broadcast_id
+       WHERE (c.customer_id=$1 OR c.business_id=$1)
+         AND m.deleted_at IS NULL
+         AND (m.broadcast_id IS NULL OR b.suppressed_at IS NULL)
+         AND (m.body ILIKE $2 OR COALESCE(m.title,'') ILIKE $2)
+       ORDER BY m.created_at DESC,m.id DESC
+       LIMIT 100`,
+      [userId, `%${query}%`]
+    )
+    return result.rows.map((row) => ({
+      conversationId: row.conversation_id,
+      messageId: row.message_id,
+      body: row.body,
+      title: row.title ?? '',
+      createdAt: row.created_at
     }))
   }
   async setMessageReaction(messageId: string, userId: string, emoji: string | null) {

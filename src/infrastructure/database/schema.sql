@@ -29,8 +29,16 @@ CREATE TABLE IF NOT EXISTS profile_settings (
   show_last_seen boolean NOT NULL DEFAULT true,
   allow_read_receipts boolean NOT NULL DEFAULT true,
   allow_broadcasts boolean NOT NULL DEFAULT true,
+  quiet_hours_enabled boolean NOT NULL DEFAULT false,
+  quiet_hours_start time NOT NULL DEFAULT '22:00',
+  quiet_hours_end time NOT NULL DEFAULT '08:00',
+  time_zone varchar(80) NOT NULL DEFAULT 'UTC',
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE profile_settings ADD COLUMN IF NOT EXISTS quiet_hours_enabled boolean NOT NULL DEFAULT false;
+ALTER TABLE profile_settings ADD COLUMN IF NOT EXISTS quiet_hours_start time NOT NULL DEFAULT '22:00';
+ALTER TABLE profile_settings ADD COLUMN IF NOT EXISTS quiet_hours_end time NOT NULL DEFAULT '08:00';
+ALTER TABLE profile_settings ADD COLUMN IF NOT EXISTS time_zone varchar(80) NOT NULL DEFAULT 'UTC';
 
 CREATE TABLE IF NOT EXISTS business_requests (
   id uuid PRIMARY KEY,

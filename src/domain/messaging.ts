@@ -45,6 +45,13 @@ export interface ConversationSummary extends Conversation {
   muted: boolean
   pinned: boolean
 }
+export interface MessageSearchResult {
+  conversationId: string
+  messageId: string
+  body: string
+  title: string
+  createdAt: Date
+}
 export interface BusinessInvite {
   id: string
   businessId: string
@@ -81,6 +88,7 @@ export interface MessagingRepository {
   createMessage(value: Message): Promise<void>
   findMessage(id: string): Promise<Message | null>
   listMessages(conversationId: string): Promise<Message[]>
+  searchMessages(userId: string, query: string): Promise<MessageSearchResult[]>
   setMessageReaction(
     messageId: string,
     userId: string,

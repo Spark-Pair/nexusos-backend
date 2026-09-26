@@ -199,6 +199,10 @@ export class MemoryAuthRepository
         showLastSeen: true,
         allowReadReceipts: true,
         allowBroadcasts: true,
+        quietHoursEnabled: false,
+        quietHoursStart: '22:00',
+        quietHoursEnd: '08:00',
+        timeZone: 'UTC',
         updatedAt: new Date(0)
       }
     )
@@ -277,6 +281,33 @@ export class MemoryAuthRepository
           (!item.broadcastId || !this.suppressedBroadcasts.has(item.broadcastId))
       )
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+  }
+  async searchMessages(userId: string, query: string) {
+    const needle = query.toLocaleLowerCase()
+    const conversationIds = new Set(
+      [...this.conversations.values()]
+        .filter(
+          (conversation) => conversation.customerId === userId || conversation.businessId === userId
+        )
+        .map((conversation) => conversation.id)
+    )
+    return [...this.messages.values()]
+      .filter(
+        (message) =>
+          conversationIds.has(message.conversationId) &&
+          !message.deletedAt &&
+          (!message.broadcastId || !this.suppressedBroadcasts.has(message.broadcastId)) &&
+          `${message.title ?? ''} ${message.body}`.toLocaleLowerCase().includes(needle)
+      )
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 100)
+      .map((message) => ({
+        conversationId: message.conversationId,
+        messageId: message.id,
+        body: message.body,
+        title: message.title ?? '',
+        createdAt: message.createdAt
+      }))
   }
   async setMessageReaction(messageId: string, userId: string, emoji: string | null) {
     const message = this.messages.get(messageId)

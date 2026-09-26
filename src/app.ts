@@ -106,13 +106,14 @@ export function createApp(
   const businessInvites = new BusinessInviteService(repository, config.FRONTEND_URL)
   const push = new PushNotificationService(repository, config)
   const messaging = new MessagingService(repository, async (userId, payload) => {
+    const conversationId = payload.url.split('/').at(-1) ?? ''
+    const state = await repository.getConversationState(userId, conversationId)
+    const allowed = !state.muted && (await push.isAllowed(userId))
     publishRealtime(userId, {
-      conversationId: payload.url.split('/').at(-1) ?? '',
-      title: payload.title,
-      body: payload.body,
-      url: payload.url
+      conversationId,
+      ...(allowed ? payload : {})
     })
-    await push.send(userId, payload)
+    if (allowed) await push.send(userId, payload)
   })
   app.use(helmet())
   const allowedOrigins = (config.FRONTEND_ORIGINS ?? config.FRONTEND_URL)
@@ -157,12 +158,17 @@ export function createApp(
           body: broadcast.body,
           url: `/app/chats/${conversation.id}`
         }
+        const state = await repository.getConversationState(
+          conversation.customerId,
+          conversation.id
+        )
+        const allowed = !state.muted && (await push.isAllowed(conversation.customerId))
         publishRealtime(conversation.customerId, {
           conversationId: conversation.id,
-          ...notification
+          ...(allowed ? notification : {})
         })
         publishRealtime(conversation.businessId, { conversationId: conversation.id })
-        await push.send(conversation.customerId, notification)
+        if (allowed) await push.send(conversation.customerId, notification)
       } catch {
         // Clients also reconcile from the inbox on reconnect and periodic refresh.
       }
@@ -245,11 +251,35 @@ export function createApp(
         language: z.enum(['en', 'ur', 'roman-ur']),
         show_last_seen: z.boolean(),
         allow_read_receipts: z.boolean(),
-        allow_broadcasts: z.boolean()
+        allow_broadcasts: z.boolean(),
+        quiet_hours_enabled: z.boolean().optional(),
+        quiet_hours_start: z
+          .string()
+          .regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/u)
+          .optional(),
+        quiet_hours_end: z
+          .string()
+          .regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/u)
+          .optional(),
+        time_zone: z
+          .string()
+          .trim()
+          .min(1)
+          .max(80)
+          .refine((value) => {
+            try {
+              new Intl.DateTimeFormat('en', { timeZone: value })
+              return true
+            } catch {
+              return false
+            }
+          })
+          .optional()
       })
       .parse(request.body)
     const user = await repository.findUserById(current.id)
     if (!user) throw new AuthError('Profile not found.', 404)
+    const currentSettings = await repository.getProfileSettings(user.id)
     const updatedUser = await repository.updateUser({
       ...user,
       name: data.name,
@@ -262,6 +292,10 @@ export function createApp(
       showLastSeen: data.show_last_seen,
       allowReadReceipts: data.allow_read_receipts,
       allowBroadcasts: data.allow_broadcasts,
+      quietHoursEnabled: data.quiet_hours_enabled ?? currentSettings.quietHoursEnabled,
+      quietHoursStart: data.quiet_hours_start ?? currentSettings.quietHoursStart,
+      quietHoursEnd: data.quiet_hours_end ?? currentSettings.quietHoursEnd,
+      timeZone: data.time_zone ?? currentSettings.timeZone,
       updatedAt: new Date()
     })
     response.json({ data: { name: updatedUser.name, username: updatedUser.username, settings } })
@@ -389,6 +423,11 @@ export function createApp(
   app.get('/api/conversations', async (request, response) => {
     const current = await actor(request.header('authorization'))
     response.json({ data: await messaging.list(current.id) })
+  })
+  app.get('/api/conversations/search', async (request, response) => {
+    const current = await actor(request.header('authorization'))
+    const query = z.string().trim().max(80).catch('').parse(request.query.q)
+    response.json({ data: await messaging.searchMessages(current.id, query) })
   })
   app.post('/api/conversations/invite', limiter, async (request, response) => {
     const current = await actor(request.header('authorization'))

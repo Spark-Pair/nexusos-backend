@@ -14,6 +14,11 @@ export class MessagingService {
     if (kind !== 'business' || !query.trim()) return []
     return this.repository.searchProfiles(userId, kind, query)
   }
+  searchMessages(userId: string, query: string) {
+    const normalized = query.trim()
+    if (normalized.length < 2) return Promise.resolve([])
+    return this.repository.searchMessages(userId, normalized)
+  }
   async follow(
     customerId: string,
     customerKind: AccountKind,
@@ -168,7 +173,9 @@ export class MessagingService {
         }
       })
     )
-    return results.filter((conversation): conversation is NonNullable<typeof conversation> => Boolean(conversation))
+    return results.filter((conversation): conversation is NonNullable<typeof conversation> =>
+      Boolean(conversation)
+    )
   }
   async setState(
     actorId: string,
