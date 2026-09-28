@@ -32,6 +32,7 @@ export class MemoryAuthRepository
     { archived: boolean; muted: boolean; pinned: boolean }
   >()
   private readonly pushSubscriptions = new Map<string, PushSubscriptionRecord>()
+  private readonly expoPushTokens = new Map<string, string>()
   private readonly profileSettings = new Map<string, ProfileSettings>()
   private readonly businessRequests = new Map<string, BusinessRequest>()
   private readonly broadcastLists = new Map<string, BroadcastList>()
@@ -189,6 +190,15 @@ export class MemoryAuthRepository
     return [...this.pushSubscriptions.entries()]
       .filter(([key]) => key.startsWith(`${userId}:`))
       .map(([, value]) => value)
+  }
+  async saveExpoPushToken(userId: string, token: string) {
+    this.expoPushTokens.set(`${userId}:${token}`, token)
+  }
+  async removeExpoPushToken(userId: string, token: string) {
+    this.expoPushTokens.delete(`${userId}:${token}`)
+  }
+  async listExpoPushTokens(userId: string) {
+    return [...this.expoPushTokens.entries()].filter(([key]) => key.startsWith(`${userId}:`)).map(([, token]) => token)
   }
   async getProfileSettings(userId: string) {
     return (

@@ -392,6 +392,21 @@ export class PostgresAuthRepository
       keys: { p256dh: row.p256dh, auth: row.auth }
     }))
   }
+  async saveExpoPushToken(userId: string, token: string, deviceId: string | null) {
+    await this.pool.query(
+      `INSERT INTO expo_push_tokens(user_id,token,device_id) VALUES($1,$2,$3) ON CONFLICT(user_id,token) DO UPDATE SET device_id=$3,updated_at=now()`,
+      [userId, token, deviceId]
+    )
+  }
+  async removeExpoPushToken(userId: string, token: string) {
+    await this.pool.query('DELETE FROM expo_push_tokens WHERE user_id=$1 AND token=$2', [userId, token])
+  }
+  async listExpoPushTokens(userId: string) {
+    const result = await this.pool.query<{ token: string } & QueryResultRow>(
+      'SELECT token FROM expo_push_tokens WHERE user_id=$1', [userId]
+    )
+    return result.rows.map(row => row.token)
+  }
   async getProfileSettings(userId: string): Promise<ProfileSettings> {
     const result = await this.pool.query(
       `INSERT INTO profile_settings(user_id) VALUES($1) ON CONFLICT(user_id) DO UPDATE SET user_id=EXCLUDED.user_id

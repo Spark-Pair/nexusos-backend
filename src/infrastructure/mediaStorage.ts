@@ -19,7 +19,8 @@ export interface MediaStorage {
 const extensionFor = (mimeType: string) =>
   mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg'
 
-const audioExtensionFor = (mimeType: string) => (mimeType === 'audio/mpeg' ? 'mp3' : 'webm')
+const audioExtensionFor = (mimeType: string) =>
+  mimeType === 'audio/mpeg' ? 'mp3' : mimeType === 'audio/mp4' ? 'm4a' : 'webm'
 
 const contentTypeFor = (key: string) =>
   key.endsWith('.png')
@@ -28,11 +29,13 @@ const contentTypeFor = (key: string) =>
       ? 'image/webp'
       : key.endsWith('.webm')
         ? 'audio/webm'
-        : key.endsWith('.mp3')
+      : key.endsWith('.mp3')
           ? 'audio/mpeg'
+          : key.endsWith('.m4a')
+            ? 'audio/mp4'
           : 'image/jpeg'
 
-export const mediaKeySchema = /^(?:broadcasts|audio)-[a-f0-9-]+\.(?:jpg|png|webp|webm|mp3)$/u
+export const mediaKeySchema = /^(?:broadcasts|audio)-[a-f0-9-]+\.(?:jpg|png|webp|webm|mp3|m4a)$/u
 
 class LocalMediaStorage implements MediaStorage {
   private readonly directory = resolve(process.cwd(), 'uploads')

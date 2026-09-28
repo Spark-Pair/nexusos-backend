@@ -43,11 +43,13 @@ function decodeGoogleTokenAudience(idToken: string) {
 }
 
 function createGoogleDependencies(config: AppConfig): GoogleExchangeDependencies {
-  const client = new OAuth2Client(config.GOOGLE_CLIENT_ID)
+  const audiences = (config.GOOGLE_CLIENT_ID ?? '').split(',').map((value) => value.trim()).filter(Boolean)
+  const client = new OAuth2Client(audiences[0])
   return {
     verifyIdToken: async (idToken) => {
-      const audience = config.GOOGLE_CLIENT_ID
-      if (!audience) throw new AuthError('Google sign-in is not configured.', 503)
+      if (!audiences.length) throw new AuthError('Google sign-in is not configured.', 503)
+      const audience: string | string[] =
+        audiences.length === 1 ? audiences[0]! : audiences
       const ticket = await client.verifyIdToken({ idToken, audience })
       const payload = ticket.getPayload()
       if (!payload?.sub || !payload.email) throw new AuthError('Invalid Google token.', 401)
@@ -100,7 +102,7 @@ export function createApp(
     storage: multer.memoryStorage(),
     limits: { fileSize: 10 * 1024 * 1024, files: 1 },
     fileFilter: (_request, file, done) =>
-      done(null, ['audio/webm', 'audio/mpeg'].includes(file.mimetype))
+      done(null, ['audio/webm', 'audio/mpeg', 'audio/mp4'].includes(file.mimetype))
   })
   const auth = new AuthService(repository, config)
   const businessInvites = new BusinessInviteService(repository, config.FRONTEND_URL)
@@ -218,6 +220,21 @@ export function createApp(
     const current = await actor(request.header('authorization'))
     const endpoint = z.object({ endpoint: z.string().url() }).parse(request.body).endpoint
     await push.unsubscribe(current.id, endpoint)
+    response.status(204).send()
+  })
+  app.post('/api/push/expo-tokens', async (request, response) => {
+    const current = await actor(request.header('authorization'))
+    const data = z.object({
+      token: z.string().regex(/^(?:Exponent|Expo)PushToken\[[A-Za-z0-9_-]+\]$/u),
+      device_id: z.string().trim().min(1).max(120).optional()
+    }).parse(request.body)
+    await repository.saveExpoPushToken(current.id, data.token, data.device_id ?? null)
+    response.status(204).send()
+  })
+  app.delete('/api/push/expo-tokens', async (request, response) => {
+    const current = await actor(request.header('authorization'))
+    const token = z.object({ token: z.string().min(1) }).parse(request.body).token
+    await repository.removeExpoPushToken(current.id, token)
     response.status(204).send()
   })
   app.get('/api/profile', async (request, response) => {
@@ -498,7 +515,7 @@ export function createApp(
           .default([]),
         audio_url: z
           .string()
-          .regex(/^\/api\/media\/audio-[a-f0-9-]+\.(?:webm|mp3)$/u)
+          .regex(/^\/api\/media\/audio-[a-f0-9-]+\.(?:webm|mp3|m4a)$/u)
           .nullable()
           .optional(),
         client_id: z.string().uuid().optional(),

@@ -71,6 +71,9 @@ export interface AuthRepository {
   savePushSubscription(userId: string, subscription: PushSubscriptionRecord): Promise<void>
   removePushSubscription(userId: string, endpoint: string): Promise<void>
   listPushSubscriptions(userId: string): Promise<PushSubscriptionRecord[]>
+  saveExpoPushToken(userId: string, token: string, deviceId: string | null): Promise<void>
+  removeExpoPushToken(userId: string, token: string): Promise<void>
+  listExpoPushTokens(userId: string): Promise<string[]>
   getProfileSettings(userId: string): Promise<ProfileSettings>
   updateProfileSettings(value: ProfileSettings): Promise<ProfileSettings>
 }

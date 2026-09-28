@@ -117,6 +117,14 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
   updated_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (user_id, endpoint)
 );
+CREATE TABLE IF NOT EXISTS expo_push_tokens (
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token text NOT NULL,
+  device_id text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, token)
+);
 CREATE TABLE IF NOT EXISTS broadcast_lists (
   id uuid PRIMARY KEY,
   business_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
